@@ -51,16 +51,10 @@ export function placementFromCells(cells: Coordinate[]): ShipPlacement {
   return { bow: sorted[0], length: sorted.length, orientation };
 }
 
-/** Assigns hull artwork to wrecks in sinking order (two distinct length-3 hulls). */
-export function wreckShipId(wrecks: ShipPlacement[], index: number): ShipId {
-  const wreck = wrecks[index];
-  if (wreck.length === 5) return 0;
-  if (wreck.length === 4) return 1;
-  if (wreck.length === 2) return 4;
-  const prior = wrecks
-    .slice(0, index)
-    .filter((w) => w.length === 3).length;
-  return prior === 0 ? 2 : 3;
+/** A sunk ship: its fleet index (for the right hull art) and footprint. */
+export interface Wreck {
+  shipId: ShipId;
+  placement: ShipPlacement;
 }
 
 interface ShotFx {
@@ -108,8 +102,8 @@ export function BattleScreen({
   const [enemyShots, setEnemyShots] = useState(0);
   const [enemySunk, setEnemySunk] = useState<number[]>([]);
   const [playerSunk, setPlayerSunk] = useState<number[]>([]);
-  const [enemyWrecks, setEnemyWrecks] = useState<ShipPlacement[]>([]);
-  const [playerWrecks, setPlayerWrecks] = useState<ShipPlacement[]>([]);
+  const [enemyWrecks, setEnemyWrecks] = useState<Wreck[]>([]);
+  const [playerWrecks, setPlayerWrecks] = useState<Wreck[]>([]);
   const [fx, setFx] = useState<ShotFx | null>(null);
   const [shake, setShake] = useState<{ board: Side; seq: number } | null>(
     null,
@@ -168,10 +162,11 @@ export function BattleScreen({
     sound.play("fire");
     later(260, () => sound.play(soundFor(result.outcome)));
     if (result.outcome === "sunk" || result.outcome === "fleet-sunk") {
-      setPlayerSunk((prev) => [...prev, (result.sunkShip ?? []).length]);
+      const shipId = (playerBoard.shipIdAt(target) ?? 0) as ShipId;
+      setPlayerSunk((prev) => [...prev, shipId]);
       if (result.sunkShip) {
-        const wreck = placementFromCells(result.sunkShip);
-        setPlayerWrecks((prev) => [...prev, wreck]);
+        const placement = placementFromCells(result.sunkShip);
+        setPlayerWrecks((prev) => [...prev, { shipId, placement }]);
       }
       setShake({ board: "player", seq: seqRef.current });
     }
@@ -225,10 +220,11 @@ export function BattleScreen({
       sound.play("fire");
       later(260, () => sound.play(soundFor(result.outcome)));
       if (result.outcome === "sunk" || result.outcome === "fleet-sunk") {
-        setEnemySunk((prev) => [...prev, (result.sunkShip ?? []).length]);
+        const shipId = (enemyBoard.shipIdAt(cell) ?? 0) as ShipId;
+        setEnemySunk((prev) => [...prev, shipId]);
         if (result.sunkShip) {
-          const wreck = placementFromCells(result.sunkShip);
-          setEnemyWrecks((prev) => [...prev, wreck]);
+          const placement = placementFromCells(result.sunkShip);
+          setEnemyWrecks((prev) => [...prev, { shipId, placement }]);
         }
         setShake({ board: "enemy", seq: seqRef.current });
       }
@@ -317,11 +313,11 @@ export function BattleScreen({
               }),
             )}
             </div>
-            {enemyWrecks.map((wreck, i) => (
+            {enemyWrecks.map((wreck) => (
               <ShipOverlay
-                key={i}
-                shipId={wreckShipId(enemyWrecks, i)}
-                placement={wreck}
+                key={wreck.shipId}
+                shipId={wreck.shipId}
+                placement={wreck.placement}
                 variant="sunk"
                 className="pointer-events-none z-10 animate-fade-in opacity-90"
               />
@@ -374,11 +370,11 @@ export function BattleScreen({
                 className="pointer-events-none z-10"
               />
             ))}
-            {playerWrecks.map((wreck, i) => (
+            {playerWrecks.map((wreck) => (
               <ShipOverlay
-                key={`wreck-${i}`}
-                shipId={wreckShipId(playerWrecks, i)}
-                placement={wreck}
+                key={`wreck-${wreck.shipId}`}
+                shipId={wreck.shipId}
+                placement={wreck.placement}
                 variant="sunk"
                 className="pointer-events-none z-10 animate-fade-in"
               />
@@ -475,8 +471,8 @@ export function ShotOverlay({ outcome }: { outcome: FireOutcome }) {
   );
 }
 
+/** Fleet readout; `sunk` holds the fleet indices of sunk ships. */
 export function FleetStatus({ label, sunk }: { label: string; sunk: number[] }) {
-  const remaining = [...sunk];
   return (
     <div className="rounded-md border border-navy-line bg-navy-900/80 p-3">
       <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.25em] text-foam-400/70">
@@ -484,11 +480,7 @@ export function FleetStatus({ label, sunk }: { label: string; sunk: number[] }) 
       </p>
       <ul className="flex flex-col gap-1">
         {FLEET_LENGTHS.map((length, i) => {
-          const sunkIndex = remaining.indexOf(length);
-          const isSunk = sunkIndex !== -1;
-          if (isSunk) {
-            remaining.splice(sunkIndex, 1);
-          }
+          const isSunk = sunk.includes(i);
           return (
             <li
               key={i}

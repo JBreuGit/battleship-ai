@@ -20,9 +20,9 @@ import {
   FleetStatus,
   ShotOverlay,
   Side,
+  Wreck,
   makeGrid,
   placementFromCells,
-  wreckShipId,
 } from "./BattleScreen";
 import { BoardShell } from "./BoardShell";
 import { ShipId, ShipOverlay } from "./ShipSprite";
@@ -142,8 +142,8 @@ export function AdmiralBattleScreen({
   const [busy, setBusy] = useState(false);
   const [enemySunk, setEnemySunk] = useState<number[]>([]);
   const [playerSunk, setPlayerSunk] = useState<number[]>([]);
-  const [enemyWrecks, setEnemyWrecks] = useState<ShipPlacement[]>([]);
-  const [playerWrecks, setPlayerWrecks] = useState<ShipPlacement[]>([]);
+  const [enemyWrecks, setEnemyWrecks] = useState<Wreck[]>([]);
+  const [playerWrecks, setPlayerWrecks] = useState<Wreck[]>([]);
   const [exposedOwnCells, setExposedOwnCells] = useState<string[]>([]);
   const [fx, setFx] = useState<ShotFx | null>(null);
   const [scanFx, setScanFx] = useState<ScanFx | null>(null);
@@ -256,20 +256,20 @@ export function AdmiralBattleScreen({
       }
 
       if (result.outcome === "sunk" || result.outcome === "fleet-sunk") {
-        const wreck = result.sunkShip
-          ? placementFromCells(result.sunkShip)
-          : null;
+        const sunkBoard = game.board(board === "enemy" ? ENEMY : PLAYER);
+        const shipId = (sunkBoard.shipIdAt(target) ?? 0) as ShipId;
         const setSunk = board === "enemy" ? setEnemySunk : setPlayerSunk;
         const setWrecks = board === "enemy" ? setEnemyWrecks : setPlayerWrecks;
         setSunk((prev) => {
-          const next = [...prev, (result.sunkShip ?? []).length];
+          const next = [...prev, shipId];
           if (board === "enemy" && next.length === FLEET_LENGTHS.length - 1) {
             setNotice("Final enemy ship afloat — finish her!");
           }
           return next;
         });
-        if (wreck) {
-          setWrecks((prev) => [...prev, wreck]);
+        if (result.sunkShip) {
+          const placement = placementFromCells(result.sunkShip);
+          setWrecks((prev) => [...prev, { shipId, placement }]);
         }
         setShake({ board, seq: seqRef.current });
       }
@@ -679,11 +679,11 @@ export function AdmiralBattleScreen({
                 }),
               )}
             </div>
-            {enemyWrecks.map((wreck, i) => (
+            {enemyWrecks.map((wreck) => (
               <ShipOverlay
-                key={i}
-                shipId={wreckShipId(enemyWrecks, i)}
-                placement={wreck}
+                key={wreck.shipId}
+                shipId={wreck.shipId}
+                placement={wreck.placement}
                 variant="sunk"
                 className="pointer-events-none z-10 animate-fade-in opacity-90"
               />
@@ -759,11 +759,11 @@ export function AdmiralBattleScreen({
                 className="pointer-events-none z-10"
               />
             ))}
-            {playerWrecks.map((wreck, i) => (
+            {playerWrecks.map((wreck) => (
               <ShipOverlay
-                key={`wreck-${i}`}
-                shipId={wreckShipId(playerWrecks, i)}
-                placement={wreck}
+                key={`wreck-${wreck.shipId}`}
+                shipId={wreck.shipId}
+                placement={wreck.placement}
                 variant="sunk"
                 className="pointer-events-none z-10 animate-fade-in"
               />
