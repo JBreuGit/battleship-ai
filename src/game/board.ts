@@ -139,6 +139,16 @@ export class Board {
     return this.shots.has(coordKey(target));
   }
 
+  /** Fleet index (order of the constructor placements) of the ship at a cell, or null. */
+  shipIdAt(target: Coordinate): number | null {
+    return this.cellToShip.get(coordKey(target))?.id ?? null;
+  }
+
+  isShipSunk(id: number): boolean {
+    const ship = this.ships[id];
+    return ship !== undefined && ship.hits.size === ship.cells.length;
+  }
+
   allSunk(): boolean {
     return this.ships.every((ship) => ship.hits.size === ship.cells.length);
   }
