@@ -18,7 +18,12 @@ export type Difficulty = "easy" | "medium" | "hard";
  * - "sunk": fired, part of a sunk ship
  * - "cleared": deduced empty (adjacent to a sunk ship — ships never touch)
  */
-type CellKnowledge = "unknown" | "miss" | "hit" | "sunk" | "cleared";
+export type CellKnowledge =
+  | "unknown"
+  | "miss"
+  | "hit"
+  | "sunk"
+  | "cleared";
 
 export interface AiPlayer {
   readonly difficulty: Difficulty;
@@ -35,7 +40,7 @@ const ORTHOGONAL = [
   { dx: 0, dy: -1 },
 ] as const;
 
-abstract class BaseAi implements AiPlayer {
+export abstract class BaseAi implements AiPlayer {
   abstract readonly difficulty: Difficulty;
   protected readonly grid: CellKnowledge[][];
   protected remainingLengths: number[] = [...FLEET_LENGTHS];
@@ -73,6 +78,11 @@ abstract class BaseAi implements AiPlayer {
     return this.grid[y][x];
   }
 
+  /** Record externally-deduced knowledge about a square. */
+  protected setKnowledge({ x, y }: Coordinate, state: CellKnowledge): void {
+    this.grid[y][x] = state;
+  }
+
   protected cellsWhere(state: CellKnowledge): Coordinate[] {
     const cells: Coordinate[] = [];
     for (let y = 0; y < BOARD_SIZE; y++) {
@@ -91,7 +101,7 @@ abstract class BaseAi implements AiPlayer {
 }
 
 /** Easy: fires at a uniformly random square it has not tried before. */
-class EasyAi extends BaseAi {
+export class EasyAi extends BaseAi {
   readonly difficulty = "easy";
 
   nextShot(): Coordinate {
@@ -103,7 +113,7 @@ class EasyAi extends BaseAi {
  * Medium: hunts randomly, but once it hits a ship it targets the squares
  * next to its hits, extending the line once the orientation is known.
  */
-class MediumAi extends BaseAi {
+export class MediumAi extends BaseAi {
   readonly difficulty = "medium";
 
   nextShot(): Coordinate {
@@ -117,7 +127,7 @@ class MediumAi extends BaseAi {
     return this.randomUnknown();
   }
 
-  private targetCandidates(hits: Coordinate[]): Coordinate[] {
+  protected targetCandidates(hits: Coordinate[]): Coordinate[] {
     if (hits.length >= 2) {
       const inline = this.lineExtensions(hits);
       if (inline.length > 0) {
@@ -162,7 +172,7 @@ class MediumAi extends BaseAi {
  * are considered. It also exploits the no-touching rule by marking the
  * ring around every sunk ship as known-empty.
  */
-class HardAi extends BaseAi {
+export class HardAi extends BaseAi {
   readonly difficulty = "hard";
 
   nextShot(): Coordinate {
@@ -200,7 +210,7 @@ class HardAi extends BaseAi {
     }
   }
 
-  private placementDensity(hits: Coordinate[]): number[][] {
+  protected placementDensity(hits: Coordinate[]): number[][] {
     const density = Array.from({ length: BOARD_SIZE }, () =>
       Array.from({ length: BOARD_SIZE }, () => 0),
     );
