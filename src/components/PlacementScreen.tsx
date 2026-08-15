@@ -239,11 +239,21 @@ export function PlacementScreen({
         restore(d);
       }
     };
+    const cancel = () => {
+      const d = dragRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      if (d) {
+        restore(d);
+      }
+    };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
     };
   }, [dragActive, cellFromPointer, tryPlace]);
 
