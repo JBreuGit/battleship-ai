@@ -7,6 +7,7 @@ import {
   ShotResult,
   barrageCells,
   scanArea,
+  sonarArea,
 } from "@/game/advanced";
 import { AdvancedAiPlayer, TurnEvent, createAdvancedAi } from "@/game/advancedAi";
 import { Difficulty } from "@/game/ai";
@@ -85,7 +86,7 @@ const ABILITY_INFO: {
     kind: "recon",
     label: "Recon flight",
     ship: "Carrier",
-    blurb: "Scan 3×3 — reports contact count",
+    blurb: "Photograph 3×3 — reveals exact ship cells",
   },
   {
     kind: "barrage",
@@ -97,7 +98,7 @@ const ABILITY_INFO: {
     kind: "sonar",
     label: "Active sonar",
     ship: "Cruiser",
-    blurb: "Ping 3×3 — but exposes one of your cells",
+    blurb: "Ping 5×5 — counts contacts, exposes one of your cells",
   },
   {
     kind: "rapid-fire",
@@ -187,7 +188,7 @@ export function AdmiralBattleScreen({
   }, []);
 
   const markEnemyIntel = useCallback(
-    (cells: Coordinate[], state: "cleared" | "suspect") => {
+    (cells: Coordinate[], state: "cleared" | "suspect" | "revealed") => {
       setEnemyGrid((prev) => {
         const next = prev.map((row) => [...row]);
         for (const cell of cells) {
@@ -313,7 +314,12 @@ export function AdmiralBattleScreen({
               kind: "recon",
               seq: seqRef.current,
             });
-            setNotice("Enemy recon aircraft overhead — they are charting your fleet.");
+            const n = report.contacts.length;
+            setNotice(
+              n > 0
+                ? `Enemy recon aircraft overhead — ${n} of your ship cell${n > 1 ? "s" : ""} photographed!`
+                : "Enemy recon aircraft overhead — they photographed open water.",
+            );
             refresh();
           });
           t += AI_EVENT_STEP;
@@ -424,11 +430,13 @@ export function AdmiralBattleScreen({
           seq: seqRef.current,
         });
         later(900, () => {
-          markEnemyIntel(report.cells, report.contacts > 0 ? "suspect" : "cleared");
+          markEnemyIntel(report.contacts, "revealed");
+          markEnemyIntel(report.cells, "cleared");
+          const n = report.contacts.length;
           setNotice(
-            report.contacts > 0
-              ? `Recon reports ${report.contacts} contact${report.contacts > 1 ? "s" : ""} in the area!`
-              : "Recon reports the area clear.",
+            n > 0
+              ? `Recon photos: ${n} enemy ship cell${n > 1 ? "s" : ""} revealed — marked ◎ on the plot!`
+              : "Recon photos developed — the area is clear.",
           );
         });
         afterPlayerAction(1400);
@@ -448,11 +456,11 @@ export function AdmiralBattleScreen({
           setExposedOwnCells((prev) => [...prev, coordKey(revealed)]);
         }
         later(900, () => {
-          markEnemyIntel(report.cells, report.contact ? "suspect" : "cleared");
+          markEnemyIntel(report.cells, report.contacts > 0 ? "suspect" : "cleared");
           setNotice(
-            (report.contact
-              ? "Sonar: CONTACT in the pinged area!"
-              : "Sonar: no contact.") +
+            (report.contacts > 0
+              ? `Sonar: ${report.contacts} contact echo${report.contacts > 1 ? "es" : ""} somewhere in the 5×5 area!`
+              : "Sonar: the 5×5 area is clear.") +
               (report.revealedOwnCell
                 ? " Your ping echoed — one of your ships is exposed."
                 : ""),
@@ -518,7 +526,9 @@ export function AdmiralBattleScreen({
       setNotice(
         kind === "barrage"
           ? "Barrage armed — pick the center of the cross."
-          : `${kind === "recon" ? "Recon" : "Sonar"} armed — pick the center of the 3×3 area.`,
+          : kind === "recon"
+            ? "Recon armed — pick the center of the 3×3 photo run."
+            : "Sonar armed — pick the center of the 5×5 ping.",
       );
     },
     [abilityLock, busy, game, refresh, turn, winner],
@@ -526,9 +536,12 @@ export function AdmiralBattleScreen({
 
   const previewCells = new Set<string>(
     arming && hoverCell
-      ? (arming === "barrage" ? barrageCells(hoverCell) : scanArea(hoverCell)).map(
-          coordKey,
-        )
+      ? (arming === "barrage"
+          ? barrageCells(hoverCell)
+          : arming === "sonar"
+            ? sonarArea(hoverCell)
+            : scanArea(hoverCell)
+        ).map(coordKey)
       : [],
   );
 

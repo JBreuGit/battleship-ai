@@ -54,15 +54,15 @@ export type ShotResult = FireResult | { outcome: "evaded" };
 export interface ReconReport {
   /** The on-board cells of the scanned 3x3 area. */
   cells: Coordinate[];
-  /** How many of those cells contain a ship (exact positions not revealed). */
-  contacts: number;
+  /** The exact positions of ship cells photographed within the area. */
+  contacts: Coordinate[];
 }
 
 export interface SonarReport {
-  /** The on-board cells of the pinged 3x3 area. */
+  /** The on-board cells of the pinged 5x5 area. */
   cells: Coordinate[];
-  /** Whether any ship occupies the area. */
-  contact: boolean;
+  /** How many ship cells echo within the area (positions not revealed). */
+  contacts: number;
   /**
    * The pinger's own occupied, not-yet-hit cell revealed to the opponent
    * in return, or null if every own ship cell has already been fired at.
@@ -109,15 +109,20 @@ export function barrageCells(center: Coordinate): Coordinate[] {
   })).filter(isOnBoard);
 }
 
-/** The on-board cells of the 3x3 scan area centered on `center`. */
+/** The on-board cells of the 3x3 recon area centered on `center`. */
 export function scanArea(center: Coordinate): Coordinate[] {
-  return area3x3(center);
+  return areaAround(center, 1);
 }
 
-function area3x3(center: Coordinate): Coordinate[] {
+/** The on-board cells of the 5x5 sonar area centered on `center`. */
+export function sonarArea(center: Coordinate): Coordinate[] {
+  return areaAround(center, 2);
+}
+
+function areaAround(center: Coordinate, radius: number): Coordinate[] {
   const cells: Coordinate[] = [];
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
       const cell = { x: center.x + dx, y: center.y + dy };
       if (isOnBoard(cell)) {
         cells.push(cell);
@@ -131,11 +136,13 @@ function area3x3(center: Coordinate): Coordinate[] {
  * Admiral mode: classic Battleship plus one limited-use ability per ship
  * class, symmetric for both players.
  *
- * - Carrier — recon flight: count of ship cells in a 3x3 area (no damage).
+ * - Carrier — recon flight: photographs a 3x3 area, revealing the exact
+ *   positions of ship cells inside it (no damage).
  * - Battleship — main-gun barrage: fire a 5-cell cross in one action.
- * - Cruiser — active sonar: yes/no contact for a 3x3 area, but one of your
- *   own ship cells is revealed to the opponent. Pinged cells also defeat
- *   the enemy submarine's silent running.
+ * - Cruiser — active sonar: counts ship cells in a 5x5 area (positions
+ *   not revealed), but one of your own ship cells is revealed to the
+ *   opponent. Pinged cells also defeat the enemy submarine's silent
+ *   running.
  * - Submarine — silent running (passive): the first shot that would hit
  *   the submarine is evaded — no damage, and the square stays targetable.
  *   Does not trigger on cells the attacker has sonar-pinged.
@@ -242,7 +249,10 @@ export class AdvancedGame {
     this.pendingShots = 2;
   }
 
-  /** Carrier — recon flight over a 3x3 area of the opponent's grid. */
+  /**
+   * Carrier — recon flight over a 3x3 area of the opponent's grid.
+   * Aerial photography: reveals the exact ship cells within the area.
+   */
   useRecon(player: PlayerId, center: Coordinate): ReconReport {
     this.assertAbility(player, "recon");
     if (!isOnBoard(center)) {
@@ -250,18 +260,17 @@ export class AdvancedGame {
     }
     this.uses[player].recon -= 1;
     const board = this.boards[this.opponent(player)];
-    const cells = area3x3(center);
-    const contacts = cells.filter(
-      (cell) => board.shipIdAt(cell) !== null,
-    ).length;
+    const cells = scanArea(center);
+    const contacts = cells.filter((cell) => board.shipIdAt(cell) !== null);
     this.endTurn();
     return { cells, contacts };
   }
 
   /**
-   * Cruiser — active sonar ping on a 3x3 area. Reports contact yes/no,
-   * marks the area as pinged (defeating silent running there), and reveals
-   * one of the pinger's own un-hit ship cells to the opponent.
+   * Cruiser — active sonar ping on a 5x5 area. Reports how many ship
+   * cells echo inside it (without positions), marks the area as pinged
+   * (defeating silent running there), and reveals one of the pinger's
+   * own un-hit ship cells to the opponent.
    */
   useSonar(player: PlayerId, center: Coordinate): SonarReport {
     this.assertAbility(player, "sonar");
@@ -270,11 +279,13 @@ export class AdvancedGame {
     }
     this.uses[player].sonar -= 1;
     const enemyBoard = this.boards[this.opponent(player)];
-    const cells = area3x3(center);
+    const cells = sonarArea(center);
     for (const cell of cells) {
       this.pinged[player].add(coordKey(cell));
     }
-    const contact = cells.some((cell) => enemyBoard.shipIdAt(cell) !== null);
+    const contacts = cells.filter(
+      (cell) => enemyBoard.shipIdAt(cell) !== null,
+    ).length;
 
     const ownBoard = this.boards[player];
     const exposable = ownBoard
@@ -284,7 +295,7 @@ export class AdvancedGame {
       exposable.length > 0 ? pick(this.rng, exposable) : null;
 
     this.endTurn();
-    return { cells, contact, revealedOwnCell };
+    return { cells, contacts, revealedOwnCell };
   }
 
   /**
