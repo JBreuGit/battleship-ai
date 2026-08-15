@@ -21,6 +21,27 @@ function blockedZone(cells: Coordinate[]): string[] {
 }
 
 /**
+ * Whether `candidate` can be placed given the already-placed `others`:
+ * fully on the board and neither overlapping nor touching any other ship.
+ */
+export function canPlaceShip(
+  others: ShipPlacement[],
+  candidate: ShipPlacement,
+): boolean {
+  const cells = shipCells(candidate);
+  if (!cells.every(isOnBoard)) {
+    return false;
+  }
+  const blocked = new Set<string>();
+  for (const other of others) {
+    for (const key of blockedZone(shipCells(other))) {
+      blocked.add(key);
+    }
+  }
+  return cells.every((cell) => !blocked.has(coordKey(cell)));
+}
+
+/**
  * Generate a random valid fleet: standard ships, on board, no overlap,
  * no touching. Retries from scratch in the rare case a fleet can't be
  * completed.

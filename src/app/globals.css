@@ -1,26 +1,147 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+@theme {
+  --color-navy-950: #050d17;
+  --color-navy-900: #081625;
+  --color-navy-800: #0d2136;
+  --color-navy-700: #143049;
+  --color-navy-600: #1d4266;
+  --color-navy-line: #1e3a57;
+  --color-paper-100: #f2ecd9;
+  --color-paper-200: #e9e0c6;
+  --color-paper-300: #d9cda9;
+  --color-paper-line: #b3a67f;
+  --color-paper-ink: #35455e;
+  --color-accent-300: #ffc97e;
+  --color-accent-400: #ffb454;
+  --color-accent-500: #ff9633;
+  --color-ember-400: #ff7a4d;
+  --color-ember-500: #ff5c33;
+  --color-ember-700: #b53d1f;
+  --color-foam-300: #9fd8e8;
+  --color-foam-400: #6fbfd6;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+body {
+  background-color: var(--color-navy-950);
+  background-image:
+    linear-gradient(rgba(127, 178, 220, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(127, 178, 220, 0.045) 1px, transparent 1px);
+  background-size: 34px 34px;
+  color: #d9e6f2;
+}
+
+@keyframes splash-ring {
+  from {
+    transform: scale(0.2);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(1.7);
+    opacity: 0;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@keyframes hit-burst {
+  0% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.25);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes hit-glow {
+  from {
+    box-shadow: 0 0 20px 8px rgba(255, 92, 51, 0.85);
+  }
+  to {
+    box-shadow: 0 0 0 0 rgba(255, 92, 51, 0);
+  }
+}
+
+@keyframes sunk-flash {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(2.1);
+  }
+}
+
+@keyframes board-shake {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(-4px, 2px);
+  }
+  40% {
+    transform: translate(4px, -3px);
+  }
+  60% {
+    transform: translate(-3px, -2px);
+  }
+  80% {
+    transform: translate(3px, 2px);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.animate-splash-ring {
+  animation: splash-ring 0.6s ease-out forwards;
+}
+
+.animate-hit-burst {
+  animation: hit-burst 0.35s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+.animate-hit-glow {
+  animation: hit-glow 0.6s ease-out;
+}
+
+.animate-sunk-flash {
+  animation: sunk-flash 0.45s ease-in-out 3;
+}
+
+.animate-board-shake {
+  animation: board-shake 0.5s ease-in-out;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out both;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 1.6s ease-in-out infinite;
 }
