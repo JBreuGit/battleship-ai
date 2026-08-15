@@ -1,7 +1,10 @@
+import { AdvancedGame, PlayerId } from "./advanced";
+import { AdvancedAiPlayer } from "./advancedAi";
 import { AiPlayer } from "./ai";
 import { Board } from "./board";
 import { randomFleet } from "./placement";
-import { Rng } from "./rng";
+import { Rng, pick } from "./rng";
+import { BOARD_SIZE, Coordinate } from "./types";
 
 export interface GameOutcome {
   winner: "a" | "b";
@@ -41,4 +44,59 @@ export function playGame(
       return { winner: "b", aShots, bShots };
     }
   }
+}
+
+export interface AdvancedGameOutcome {
+  won: boolean;
+  /** Turns the tested AI took before the game ended. */
+  turns: number;
+}
+
+const MAX_TURNS = 400;
+
+/**
+ * Play one full Admiral-mode game: the tested AI (with abilities) against
+ * a purely random shooter that never uses abilities. `aiSeat` controls who
+ * fires first.
+ */
+export function playAdvancedGame(
+  ai: AdvancedAiPlayer,
+  rng: Rng,
+  aiSeat: PlayerId,
+): AdvancedGameOutcome {
+  const game = new AdvancedGame([randomFleet(rng), randomFleet(rng)], rng);
+  const dummySeat: PlayerId = aiSeat === 0 ? 1 : 0;
+
+  let turns = 0;
+  for (;;) {
+    if (game.currentTurn === aiSeat) {
+      ai.takeTurn(game, aiSeat);
+      turns++;
+    } else {
+      game.fireShot(dummySeat, randomUntriedCell(game, aiSeat, rng));
+    }
+    if (game.winner !== null) {
+      return { won: game.winner === aiSeat, turns };
+    }
+    if (turns >= MAX_TURNS) {
+      return { won: false, turns };
+    }
+  }
+}
+
+function randomUntriedCell(
+  game: AdvancedGame,
+  targetPlayer: PlayerId,
+  rng: Rng,
+): Coordinate {
+  const board = game.board(targetPlayer);
+  const candidates: Coordinate[] = [];
+  for (let y = 0; y < BOARD_SIZE; y++) {
+    for (let x = 0; x < BOARD_SIZE; x++) {
+      if (!board.hasBeenFiredAt({ x, y })) {
+        candidates.push({ x, y });
+      }
+    }
+  }
+  return pick(rng, candidates);
 }
