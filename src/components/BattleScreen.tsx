@@ -10,9 +10,11 @@ import {
   Coordinate,
   FLEET_LENGTHS,
   FireOutcome,
+  Orientation,
   ShipPlacement,
 } from "@/game/types";
 import { BoardShell } from "./BoardShell";
+import { ShipId, ShipOverlay, ShipSprite } from "./ShipSprite";
 import { SoundControls } from "./useSound";
 
 type EnemyCell = "fog" | "miss" | "hit" | "sunk";
@@ -20,6 +22,7 @@ type PlayerCell = "water" | "ship" | "miss" | "hit" | "sunk";
 type Side = "player" | "enemy";
 
 export interface Session {
+  fleet: ShipPlacement[];
   playerBoard: Board;
   enemyBoard: Board;
   ai: AiPlayer;
@@ -32,10 +35,32 @@ export function createSession(
 ): Session {
   const rng = createRng(Math.floor(Math.random() * 2 ** 32));
   return {
+    fleet,
     playerBoard: new Board(fleet),
     enemyBoard: new Board(randomFleet(rng)),
     ai: createAi(difficulty, rng),
   };
+}
+
+function placementFromCells(cells: Coordinate[]): ShipPlacement {
+  const sorted = [...cells].sort((a, b) => a.y - b.y || a.x - b.x);
+  const orientation: Orientation =
+    sorted.length > 1 && sorted[1].x !== sorted[0].x
+      ? "horizontal"
+      : "vertical";
+  return { bow: sorted[0], length: sorted.length, orientation };
+}
+
+/** Assigns hull artwork to wrecks in sinking order (two distinct length-3 hulls). */
+function wreckShipId(wrecks: ShipPlacement[], index: number): ShipId {
+  const wreck = wrecks[index];
+  if (wreck.length === 5) return 0;
+  if (wreck.length === 4) return 1;
+  if (wreck.length === 2) return 4;
+  const prior = wrecks
+    .slice(0, index)
+    .filter((w) => w.length === 3).length;
+  return prior === 0 ? 2 : 3;
 }
 
 interface ShotFx {
@@ -83,6 +108,8 @@ export function BattleScreen({
   const [enemyShots, setEnemyShots] = useState(0);
   const [enemySunk, setEnemySunk] = useState<number[]>([]);
   const [playerSunk, setPlayerSunk] = useState<number[]>([]);
+  const [enemyWrecks, setEnemyWrecks] = useState<ShipPlacement[]>([]);
+  const [playerWrecks, setPlayerWrecks] = useState<ShipPlacement[]>([]);
   const [fx, setFx] = useState<ShotFx | null>(null);
   const [shake, setShake] = useState<{ board: Side; seq: number } | null>(
     null,
@@ -138,9 +165,14 @@ export function BattleScreen({
       outcome: result.outcome,
       seq: seqRef.current,
     });
-    sound.play(soundFor(result.outcome));
+    sound.play("fire");
+    later(260, () => sound.play(soundFor(result.outcome)));
     if (result.outcome === "sunk" || result.outcome === "fleet-sunk") {
       setPlayerSunk((prev) => [...prev, (result.sunkShip ?? []).length]);
+      if (result.sunkShip) {
+        const wreck = placementFromCells(result.sunkShip);
+        setPlayerWrecks((prev) => [...prev, wreck]);
+      }
       setShake({ board: "player", seq: seqRef.current });
     }
 
@@ -190,9 +222,14 @@ export function BattleScreen({
         outcome: result.outcome,
         seq: seqRef.current,
       });
-      sound.play(soundFor(result.outcome));
+      sound.play("fire");
+      later(260, () => sound.play(soundFor(result.outcome)));
       if (result.outcome === "sunk" || result.outcome === "fleet-sunk") {
         setEnemySunk((prev) => [...prev, (result.sunkShip ?? []).length]);
+        if (result.sunkShip) {
+          const wreck = placementFromCells(result.sunkShip);
+          setEnemyWrecks((prev) => [...prev, wreck]);
+        }
         setShake({ board: "enemy", seq: seqRef.current });
       }
 
@@ -244,10 +281,11 @@ export function BattleScreen({
         >
           <div
             key={shake?.board === "enemy" ? shake.seq : "steady"}
-            className={`grid grid-cols-10 rounded-sm border border-navy-line bg-navy-800 ${
+            className={`relative ${
               shake?.board === "enemy" ? "animate-board-shake" : ""
             }`}
           >
+            <div className="grid grid-cols-10 rounded-sm border border-navy-line bg-navy-800">
             {enemyGrid.flatMap((row, y) =>
               row.map((state, x) => {
                 const isFx =
@@ -276,6 +314,16 @@ export function BattleScreen({
                 );
               }),
             )}
+            </div>
+            {enemyWrecks.map((wreck, i) => (
+              <ShipOverlay
+                key={i}
+                shipId={wreckShipId(enemyWrecks, i)}
+                placement={wreck}
+                variant="sunk"
+                className="pointer-events-none z-10 animate-fade-in opacity-90"
+              />
+            ))}
           </div>
         </BoardShell>
 
@@ -291,33 +339,48 @@ export function BattleScreen({
         >
           <div
             key={shake?.board === "player" ? shake.seq : "steady"}
-            className={`grid grid-cols-10 rounded-sm border border-paper-line bg-paper-200 ${
+            className={`relative ${
               shake?.board === "player" ? "animate-board-shake" : ""
             }`}
           >
-            {playerGrid.flatMap((row, y) =>
-              row.map((state, x) => {
-                const isFx =
-                  fx?.board === "player" && fx.cell.x === x && fx.cell.y === y;
-                return (
-                  <div
-                    key={coordKey({ x, y })}
-                    className={`relative aspect-square border border-paper-line/50 ${
-                      state === "ship"
-                        ? "bg-navy-700"
-                        : state === "hit"
-                          ? "bg-navy-700"
-                          : state === "sunk"
-                            ? "bg-ember-700"
-                            : "bg-paper-200"
-                    }`}
-                  >
-                    <CellMark state={state} />
-                    {isFx && <ShotOverlay key={fx.seq} outcome={fx.outcome} />}
-                  </div>
-                );
-              }),
-            )}
+            <div className="grid grid-cols-10 rounded-sm border border-paper-line bg-paper-200">
+              {playerGrid.flatMap((row, y) =>
+                row.map((state, x) => {
+                  const isFx =
+                    fx?.board === "player" &&
+                    fx.cell.x === x &&
+                    fx.cell.y === y;
+                  return (
+                    <div
+                      key={coordKey({ x, y })}
+                      className="relative aspect-square border border-paper-line/50 bg-paper-200"
+                    >
+                      <CellMark state={state} />
+                      {isFx && (
+                        <ShotOverlay key={fx.seq} outcome={fx.outcome} />
+                      )}
+                    </div>
+                  );
+                }),
+              )}
+            </div>
+            {session.fleet.map((placement, shipId) => (
+              <ShipOverlay
+                key={shipId}
+                shipId={shipId as ShipId}
+                placement={placement}
+                className="pointer-events-none z-10"
+              />
+            ))}
+            {playerWrecks.map((wreck, i) => (
+              <ShipOverlay
+                key={`wreck-${i}`}
+                shipId={wreckShipId(playerWrecks, i)}
+                placement={wreck}
+                variant="sunk"
+                className="pointer-events-none z-10 animate-fade-in"
+              />
+            ))}
           </div>
         </BoardShell>
       </div>
@@ -364,7 +427,7 @@ export function BattleScreen({
 function CellMark({ state }: { state: EnemyCell | PlayerCell }) {
   if (state === "miss") {
     return (
-      <span className="absolute inset-0 flex items-center justify-center">
+      <span className="absolute inset-0 z-20 flex items-center justify-center">
         <span className="h-[22%] w-[22%] rounded-full bg-foam-400/80" />
       </span>
     );
@@ -372,8 +435,8 @@ function CellMark({ state }: { state: EnemyCell | PlayerCell }) {
   if (state === "hit" || state === "sunk") {
     return (
       <span
-        className={`absolute inset-0 flex items-center justify-center font-bold ${
-          state === "sunk" ? "text-navy-950" : "text-ember-500"
+        className={`absolute inset-0 z-20 flex items-center justify-center font-bold ${
+          state === "sunk" ? "text-accent-400" : "text-ember-500"
         }`}
       >
         <svg viewBox="0 0 24 24" className="h-3/5 w-3/5" aria-hidden>
@@ -393,14 +456,14 @@ function CellMark({ state }: { state: EnemyCell | PlayerCell }) {
 function ShotOverlay({ outcome }: { outcome: FireOutcome }) {
   if (outcome === "miss") {
     return (
-      <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <span className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
         <span className="animate-splash-ring h-full w-full rounded-full border-2 border-foam-300" />
       </span>
     );
   }
   const sunk = outcome !== "hit";
   return (
-    <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+    <span className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
       <span
         className={`animate-hit-burst animate-hit-glow h-full w-full rounded-sm ${
           sunk ? "animate-sunk-flash bg-ember-500/70" : "bg-accent-500/60"
@@ -417,7 +480,7 @@ function FleetStatus({ label, sunk }: { label: string; sunk: number[] }) {
       <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.25em] text-foam-400/70">
         {label}
       </p>
-      <ul className="flex flex-col gap-1.5">
+      <ul className="flex flex-col gap-1">
         {FLEET_LENGTHS.map((length, i) => {
           const sunkIndex = remaining.indexOf(length);
           const isSunk = sunkIndex !== -1;
@@ -425,15 +488,12 @@ function FleetStatus({ label, sunk }: { label: string; sunk: number[] }) {
             remaining.splice(sunkIndex, 1);
           }
           return (
-            <li key={i} className="flex gap-[2px]">
-              {Array.from({ length }, (_, j) => (
-                <span
-                  key={j}
-                  className={`h-2 w-2 rounded-[1px] ${
-                    isSunk ? "bg-ember-700" : "bg-foam-400/50"
-                  }`}
-                />
-              ))}
+            <li
+              key={i}
+              className={isSunk ? "opacity-70" : ""}
+              style={{ width: `${length * 0.9}rem`, height: "1.1rem" }}
+            >
+              <ShipSprite shipId={i as ShipId} variant={isSunk ? "sunk" : "fleet"} />
             </li>
           );
         })}

@@ -30,7 +30,8 @@ export function BoardShell({
   return (
     <section className="flex w-full max-w-[26rem] flex-col gap-2 lg:max-w-[30rem]">
       <header className="flex items-baseline justify-between px-1">
-        <h2 className="font-mono text-xs font-semibold uppercase tracking-[0.25em] text-accent-400">
+        <h2 className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-[0.25em] text-accent-400">
+          <CompassRose />
           {title}
         </h2>
         {subtitle ? (
@@ -70,5 +71,26 @@ export function BoardShell({
         </div>
       </div>
     </section>
+  );
+}
+
+function CompassRose() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 opacity-80" aria-hidden>
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <path d="M12 3 L14 12 L12 21 L10 12 Z" fill="currentColor" />
+      <path
+        d="M3 12 L12 10 L21 12 L12 14 Z"
+        fill="currentColor"
+        opacity="0.55"
+      />
+    </svg>
   );
 }

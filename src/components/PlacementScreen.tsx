@@ -19,6 +19,7 @@ import {
   ShipPlacement,
 } from "@/game/types";
 import { BoardShell } from "./BoardShell";
+import { ShipId, ShipOverlay, ShipSprite } from "./ShipSprite";
 
 const SHIP_NAMES = [
   "Carrier",
@@ -280,16 +281,6 @@ export function PlacementScreen({
     setMessage(null);
   };
 
-  const shipAt = new Map<string, { shipId: number; index: number }>();
-  placements.forEach((placement, shipId) => {
-    if (!placement) {
-      return;
-    }
-    shipCells(placement).forEach((cell, index) => {
-      shipAt.set(coordKey(cell), { shipId, index });
-    });
-  });
-
   const candidate: ShipPlacement | null =
     drag && drag.cell
       ? {
@@ -316,46 +307,58 @@ export function PlacementScreen({
   return (
     <div className="flex w-full flex-col items-center gap-6 lg:flex-row lg:items-start lg:justify-center lg:gap-10">
       <BoardShell title="Your grid" subtitle="Deploy fleet" tone="paper">
-        <div
-          ref={boardRef}
-          className="grid grid-cols-10 touch-none select-none rounded-sm border border-paper-line bg-paper-200"
-        >
-          {Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, i) => {
-            const cell = { x: i % BOARD_SIZE, y: Math.floor(i / BOARD_SIZE) };
-            const key = coordKey(cell);
-            const ship = shipAt.get(key);
-            const inPreview = previewCells.has(key);
-            let cls =
-              "relative aspect-square border border-paper-line/50 transition-colors";
-            if (inPreview) {
-              cls += previewValid ? " bg-accent-400/80" : " bg-ember-500/80";
-            } else if (ship) {
-              cls +=
-                ship.shipId === selected
-                  ? " cursor-grab bg-navy-600 ring-1 ring-inset ring-accent-400"
-                  : " cursor-grab bg-navy-700";
-            } else {
-              cls += " hover:bg-paper-300/70";
-            }
-            return (
-              <div
-                key={key}
-                className={cls}
-                onClick={ship ? undefined : () => handleCellClick(cell)}
-                onPointerDown={
-                  ship
-                    ? (e) =>
-                        startDrag(
-                          e,
-                          ship.shipId,
-                          ship.index,
-                          placements[ship.shipId],
-                        )
-                    : undefined
-                }
+        <div className="relative">
+          <div
+            ref={boardRef}
+            className="grid grid-cols-10 touch-none select-none rounded-sm border border-paper-line bg-paper-200"
+          >
+            {Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, i) => {
+              const cell = { x: i % BOARD_SIZE, y: Math.floor(i / BOARD_SIZE) };
+              const key = coordKey(cell);
+              const inPreview = previewCells.has(key);
+              let cls =
+                "relative aspect-square border border-paper-line/50 transition-colors";
+              if (inPreview) {
+                cls += previewValid ? " bg-accent-400/80" : " bg-ember-500/80";
+              } else {
+                cls += " hover:bg-paper-300/70";
+              }
+              return (
+                <div
+                  key={key}
+                  className={cls}
+                  onClick={() => handleCellClick(cell)}
+                />
+              );
+            })}
+          </div>
+          {placements.map((placement, shipId) =>
+            placement ? (
+              <ShipOverlay
+                key={shipId}
+                shipId={shipId as ShipId}
+                placement={placement}
+                className={`cursor-grab touch-none ${
+                  selected === shipId
+                    ? "[filter:drop-shadow(0_0_5px_rgba(255,180,84,0.85))]"
+                    : ""
+                }`}
+                onPointerDown={(e) => {
+                  const cell = cellFromPointer(e.clientX, e.clientY);
+                  const raw = cell
+                    ? placement.orientation === "horizontal"
+                      ? cell.x - placement.bow.x
+                      : cell.y - placement.bow.y
+                    : 0;
+                  const grabIndex = Math.max(
+                    0,
+                    Math.min(placement.length - 1, raw),
+                  );
+                  startDrag(e, shipId, grabIndex, placement);
+                }}
               />
-            );
-          })}
+            ) : null,
+          )}
         </div>
       </BoardShell>
 
@@ -391,19 +394,18 @@ export function PlacementScreen({
                     </span>
                   ) : (
                     <div
-                      className="flex cursor-grab touch-none gap-[2px]"
+                      className={`cursor-grab touch-none rounded-sm py-0.5 ${
+                        selected === shipId
+                          ? "[filter:drop-shadow(0_0_4px_rgba(255,180,84,0.8))]"
+                          : ""
+                      }`}
+                      style={{
+                        width: `${FLEET_LENGTHS[shipId] * 1.6}rem`,
+                        height: "1.9rem",
+                      }}
                       onPointerDown={(e) => startDrag(e, shipId, 0, null)}
                     >
-                      {Array.from({ length: FLEET_LENGTHS[shipId] }, (_, i) => (
-                        <span
-                          key={i}
-                          className={`h-5 w-5 rounded-[2px] bg-navy-600 ${
-                            selected === shipId
-                              ? "ring-1 ring-accent-400"
-                              : "ring-1 ring-navy-line"
-                          }`}
-                        />
-                      ))}
+                      <ShipSprite shipId={shipId as ShipId} />
                     </div>
                   )}
                 </li>
@@ -482,24 +484,36 @@ export function PlacementScreen({
         </button>
       </div>
 
-      {drag && (
-        <div
-          className="pointer-events-none fixed z-50 flex gap-[2px]"
-          style={{
-            left: drag.pointer.x + 10,
-            top: drag.pointer.y + 10,
-            flexDirection:
-              orientations[drag.shipId] === "horizontal" ? "row" : "column",
-          }}
-        >
-          {Array.from({ length: FLEET_LENGTHS[drag.shipId] }, (_, i) => (
-            <span
-              key={i}
-              className="h-5 w-5 rounded-[2px] bg-navy-600/90 ring-1 ring-accent-400/70"
-            />
-          ))}
-        </div>
-      )}
+      {drag &&
+        (() => {
+          const length = FLEET_LENGTHS[drag.shipId];
+          const horizontal = orientations[drag.shipId] === "horizontal";
+          const cellPx = 30;
+          return (
+            <div
+              className="pointer-events-none fixed z-50 opacity-90 [filter:drop-shadow(0_2px_6px_rgba(5,13,23,0.7))]"
+              style={{
+                left: drag.pointer.x + 12,
+                top: drag.pointer.y + 12,
+                width: horizontal ? length * cellPx : cellPx,
+                height: horizontal ? cellPx : length * cellPx,
+              }}
+            >
+              <div
+                style={{
+                  width: horizontal ? "100%" : `${length * 100}%`,
+                  height: horizontal ? "100%" : `${100 / length}%`,
+                  transformOrigin: "top left",
+                  transform: horizontal
+                    ? undefined
+                    : "rotate(90deg) translateY(-100%)",
+                }}
+              >
+                <ShipSprite shipId={drag.shipId as ShipId} />
+              </div>
+            </div>
+          );
+        })()}
     </div>
   );
 }
