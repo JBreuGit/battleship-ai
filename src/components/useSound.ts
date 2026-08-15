@@ -7,6 +7,9 @@ export type SoundName =
   | "miss"
   | "hit"
   | "sunk"
+  | "sonar"
+  | "recon"
+  | "evaded"
   | "victory"
   | "defeat";
 
@@ -176,6 +179,68 @@ const EFFECTS: Record<SoundName, (ctx: AudioContext) => void> = {
       duration: 2.0,
       gain: 0.3,
       delay: 0.6,
+    });
+  },
+  // Active sonar: two clean pings with a fading echo.
+  sonar: (ctx) => {
+    for (const delay of [0, 0.55]) {
+      tone(ctx, {
+        type: "sine",
+        from: 1180,
+        to: 880,
+        duration: 0.45,
+        gain: 0.25,
+        delay,
+      });
+      tone(ctx, {
+        type: "sine",
+        from: 1180,
+        to: 620,
+        duration: 0.9,
+        gain: 0.06,
+        delay: delay + 0.05,
+      });
+    }
+  },
+  // Recon flight: propeller aircraft passing overhead.
+  recon: (ctx) => {
+    noise(ctx, {
+      duration: 1.3,
+      gain: 0.3,
+      filterFreq: 900,
+      filterType: "bandpass",
+      filterTo: 260,
+    });
+    tone(ctx, {
+      type: "sawtooth",
+      from: 95,
+      to: 55,
+      duration: 1.3,
+      gain: 0.14,
+    });
+    tone(ctx, {
+      type: "square",
+      from: 190,
+      to: 110,
+      duration: 1.3,
+      gain: 0.05,
+    });
+  },
+  // Submarine evasion: a rushing wake as she slips away.
+  evaded: (ctx) => {
+    noise(ctx, {
+      duration: 0.8,
+      gain: 0.35,
+      filterFreq: 500,
+      filterType: "bandpass",
+      filterTo: 2200,
+    });
+    tone(ctx, {
+      type: "sine",
+      from: 180,
+      to: 420,
+      duration: 0.7,
+      gain: 0.12,
     });
   },
   victory: (ctx) => {

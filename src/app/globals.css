@@ -108,6 +108,18 @@ body {
   }
 }
 
+@keyframes scan-pulse {
+  0% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @keyframes pulse-soft {
   0%,
   100% {
@@ -140,6 +152,10 @@ body {
 
 .animate-fade-in {
   animation: fade-in 0.4s ease-out both;
+}
+
+.animate-scan-pulse {
+  animation: scan-pulse 1.4s ease-out both;
 }
 
 .animate-pulse-soft {

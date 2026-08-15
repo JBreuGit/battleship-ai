@@ -35,6 +35,17 @@ const DIFFICULTIES: { value: Difficulty; label: string; blurb: string }[] = [
   { value: "hard", label: "Hard", blurb: "Predicts your fleet" },
 ];
 
+export type GameMode = "classic" | "admiral";
+
+const MODES: { value: GameMode; label: string; blurb: string }[] = [
+  { value: "classic", label: "Classic", blurb: "Standard rules — one shot per turn" },
+  {
+    value: "admiral",
+    label: "Admiral",
+    blurb: "Every ship carries a special ability",
+  },
+];
+
 interface DragState {
   shipId: number;
   grabIndex: number;
@@ -65,12 +76,16 @@ function othersOf(
 export interface PlacementScreenProps {
   difficulty: Difficulty;
   onDifficultyChange: (difficulty: Difficulty) => void;
+  mode: GameMode;
+  onModeChange: (mode: GameMode) => void;
   onStart: (fleet: ShipPlacement[]) => void;
 }
 
 export function PlacementScreen({
   difficulty,
   onDifficultyChange,
+  mode,
+  onModeChange,
   onStart,
 }: PlacementScreenProps) {
   const [placements, setPlacements] = useState<(ShipPlacement | null)[]>(() =>
@@ -443,6 +458,42 @@ export function PlacementScreen({
           >
             {message?.text ?? ""}
           </p>
+        </div>
+
+        <div className="rounded-md border border-navy-line bg-navy-900/80 p-4">
+          <h2 className="mb-3 font-mono text-xs font-semibold uppercase tracking-[0.25em] text-accent-400">
+            Rules of engagement
+          </h2>
+          <div className="flex gap-2">
+            {MODES.map(({ value, label, blurb }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => onModeChange(value)}
+                className={`flex-1 rounded border px-2 py-2 text-center transition-colors ${
+                  mode === value
+                    ? "border-accent-400 bg-navy-700 text-accent-300"
+                    : "border-navy-line bg-navy-800 text-foam-400/80 hover:border-accent-400/50"
+                }`}
+              >
+                <span className="block font-mono text-[11px] font-semibold uppercase tracking-widest">
+                  {label}
+                </span>
+                <span className="mt-1 block text-[10px] opacity-70">
+                  {blurb}
+                </span>
+              </button>
+            ))}
+          </div>
+          {mode === "admiral" && (
+            <ul className="mt-3 flex flex-col gap-1 text-[10px] text-foam-400/70">
+              <li>Carrier — recon flight scans a 3×3 area</li>
+              <li>Battleship — one 5-shell barrage cross</li>
+              <li>Cruiser — sonar ping, but exposes one of your cells</li>
+              <li>Submarine — silently evades the first hit</li>
+              <li>Destroyer — rapid fire: two shots in a turn</li>
+            </ul>
+          )}
         </div>
 
         <div className="rounded-md border border-navy-line bg-navy-900/80 p-4">

@@ -2,8 +2,13 @@
 
 import { useState } from "react";
 import { Difficulty } from "@/game/ai";
+import {
+  AdmiralBattleScreen,
+  AdmiralSession,
+  createAdmiralSession,
+} from "./AdmiralBattleScreen";
 import { BattleScreen, Session, createSession } from "./BattleScreen";
-import { PlacementScreen } from "./PlacementScreen";
+import { GameMode, PlacementScreen } from "./PlacementScreen";
 import { useSound } from "./useSound";
 
 export default function BattleshipGame() {
@@ -14,7 +19,10 @@ export default function BattleshipGame() {
 function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
   const sound = useSound();
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
-  const [session, setSession] = useState<Session | null>(null);
+  const [mode, setMode] = useState<GameMode>("classic");
+  const [session, setSession] = useState<Session | AdmiralSession | null>(
+    null,
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6">
@@ -58,17 +66,34 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
       </header>
 
       {session ? (
-        <BattleScreen
-          session={session}
-          difficulty={difficulty}
-          sound={sound}
-          onPlayAgain={onPlayAgain}
-        />
+        "game" in session ? (
+          <AdmiralBattleScreen
+            session={session}
+            difficulty={difficulty}
+            sound={sound}
+            onPlayAgain={onPlayAgain}
+          />
+        ) : (
+          <BattleScreen
+            session={session}
+            difficulty={difficulty}
+            sound={sound}
+            onPlayAgain={onPlayAgain}
+          />
+        )
       ) : (
         <PlacementScreen
           difficulty={difficulty}
           onDifficultyChange={setDifficulty}
-          onStart={(fleet) => setSession(createSession(fleet, difficulty))}
+          mode={mode}
+          onModeChange={setMode}
+          onStart={(fleet) =>
+            setSession(
+              mode === "admiral"
+                ? createAdmiralSession(fleet, difficulty)
+                : createSession(fleet, difficulty),
+            )
+          }
         />
       )}
     </div>
