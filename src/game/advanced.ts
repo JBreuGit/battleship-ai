@@ -101,6 +101,19 @@ const BARRAGE_PATTERN = [
   { dx: 0, dy: -1 },
 ] as const;
 
+/** The on-board cells a barrage centered on `center` would cover. */
+export function barrageCells(center: Coordinate): Coordinate[] {
+  return BARRAGE_PATTERN.map(({ dx, dy }) => ({
+    x: center.x + dx,
+    y: center.y + dy,
+  })).filter(isOnBoard);
+}
+
+/** The on-board cells of the 3x3 scan area centered on `center`. */
+export function scanArea(center: Coordinate): Coordinate[] {
+  return area3x3(center);
+}
+
 function area3x3(center: Coordinate): Coordinate[] {
   const cells: Coordinate[] = [];
   for (let dy = -1; dy <= 1; dy++) {

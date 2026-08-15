@@ -19,7 +19,7 @@ import { SoundControls } from "./useSound";
 
 type EnemyCell = "fog" | "miss" | "hit" | "sunk";
 type PlayerCell = "water" | "ship" | "miss" | "hit" | "sunk";
-type Side = "player" | "enemy";
+export type Side = "player" | "enemy";
 
 export interface Session {
   fleet: ShipPlacement[];
@@ -42,7 +42,7 @@ export function createSession(
   };
 }
 
-function placementFromCells(cells: Coordinate[]): ShipPlacement {
+export function placementFromCells(cells: Coordinate[]): ShipPlacement {
   const sorted = [...cells].sort((a, b) => a.y - b.y || a.x - b.x);
   const orientation: Orientation =
     sorted.length > 1 && sorted[1].x !== sorted[0].x
@@ -52,7 +52,7 @@ function placementFromCells(cells: Coordinate[]): ShipPlacement {
 }
 
 /** Assigns hull artwork to wrecks in sinking order (two distinct length-3 hulls). */
-function wreckShipId(wrecks: ShipPlacement[], index: number): ShipId {
+export function wreckShipId(wrecks: ShipPlacement[], index: number): ShipId {
   const wreck = wrecks[index];
   if (wreck.length === 5) return 0;
   if (wreck.length === 4) return 1;
@@ -77,7 +77,7 @@ export interface BattleScreenProps {
   onPlayAgain: () => void;
 }
 
-function makeGrid<T>(fill: T): T[][] {
+export function makeGrid<T>(fill: T): T[][] {
   return Array.from({ length: BOARD_SIZE }, () =>
     Array.from({ length: BOARD_SIZE }, () => fill),
   );
@@ -269,7 +269,9 @@ export function BattleScreen({
         {winner
           ? "Engagement over"
           : turn === "player"
-            ? "Your turn — fire at the enemy grid"
+            ? enemySunk.length === FLEET_LENGTHS.length - 1
+              ? "Final enemy ship afloat — finish her!"
+              : "Your turn — fire at the enemy grid"
             : "Enemy is firing…"}
       </div>
 
@@ -424,7 +426,7 @@ export function BattleScreen({
   );
 }
 
-function CellMark({ state }: { state: EnemyCell | PlayerCell }) {
+export function CellMark({ state }: { state: string }) {
   if (state === "miss") {
     return (
       <span className="absolute inset-0 z-20 flex items-center justify-center">
@@ -436,7 +438,7 @@ function CellMark({ state }: { state: EnemyCell | PlayerCell }) {
     return (
       <span
         className={`absolute inset-0 z-20 flex items-center justify-center font-bold ${
-          state === "sunk" ? "text-accent-400" : "text-ember-500"
+          state === "sunk" ? "text-ember-400" : "text-accent-400"
         }`}
       >
         <svg viewBox="0 0 24 24" className="h-3/5 w-3/5" aria-hidden>
@@ -453,7 +455,7 @@ function CellMark({ state }: { state: EnemyCell | PlayerCell }) {
   return null;
 }
 
-function ShotOverlay({ outcome }: { outcome: FireOutcome }) {
+export function ShotOverlay({ outcome }: { outcome: FireOutcome }) {
   if (outcome === "miss") {
     return (
       <span className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
@@ -473,7 +475,7 @@ function ShotOverlay({ outcome }: { outcome: FireOutcome }) {
   );
 }
 
-function FleetStatus({ label, sunk }: { label: string; sunk: number[] }) {
+export function FleetStatus({ label, sunk }: { label: string; sunk: number[] }) {
   const remaining = [...sunk];
   return (
     <div className="rounded-md border border-navy-line bg-navy-900/80 p-3">
