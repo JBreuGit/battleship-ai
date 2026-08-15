@@ -108,13 +108,14 @@ describe("Admiral mode: turns and shots", () => {
 });
 
 describe("Admiral mode: carrier recon flight", () => {
-  it("reports the contact count of a 3x3 area without dealing damage", () => {
+  it("reveals the exact ship cells of a 3x3 area without dealing damage", () => {
     const game = newGame();
     // Area centered at (1,1) covers carrier cells (0,0),(1,0),(2,0)
     // and battleship cells (0,2),(1,2),(2,2).
     const report = game.useRecon(0, { x: 1, y: 1 });
     expect(report.cells).toHaveLength(9);
-    expect(report.contacts).toBe(6);
+    const keys = report.contacts.map(({ x, y }) => `${x},${y}`).sort();
+    expect(keys).toEqual(["0,0", "0,2", "1,0", "1,2", "2,0", "2,2"]);
     expect(game.board(1).hasBeenFiredAt({ x: 1, y: 1 })).toBe(false);
     expect(game.currentTurn).toBe(1);
   });
@@ -123,7 +124,7 @@ describe("Admiral mode: carrier recon flight", () => {
     const game = newGame();
     const report = game.useRecon(0, { x: 9, y: 9 });
     expect(report.cells).toHaveLength(4);
-    expect(report.contacts).toBe(0);
+    expect(report.contacts).toEqual([]);
   });
 
   it("is limited to its initial number of uses", () => {
@@ -153,7 +154,7 @@ describe("Admiral mode: carrier recon flight", () => {
 });
 
 describe("Admiral mode: cruiser active sonar", () => {
-  it("reports contact and reveals one of the pinger's own un-hit ship cells", () => {
+  it("counts contacts in a 5x5 area and reveals one of the pinger's own un-hit ship cells", () => {
     const game = newGame();
     const ownCells = new Set(
       game
@@ -161,18 +162,21 @@ describe("Admiral mode: cruiser active sonar", () => {
         .occupiedCells()
         .map(({ x, y }) => `${x},${y}`),
     );
+    // 5x5 centered at (1,0) covers carrier cells x=0..3 at y=0 and
+    // battleship cells x=0..3 at y=2.
     const report = game.useSonar(0, { x: 1, y: 0 });
-    expect(report.contact).toBe(true);
+    expect(report.cells).toHaveLength(12);
+    expect(report.contacts).toBe(8);
     expect(report.revealedOwnCell).not.toBeNull();
     const revealed = report.revealedOwnCell!;
     expect(ownCells.has(`${revealed.x},${revealed.y}`)).toBe(true);
     expect(game.currentTurn).toBe(1);
   });
 
-  it("reports no contact over open water", () => {
+  it("reports no contacts over open water", () => {
     const game = newGame();
-    const report = game.useSonar(0, { x: 8, y: 8 });
-    expect(report.contact).toBe(false);
+    const report = game.useSonar(0, { x: 7, y: 8 });
+    expect(report.contacts).toBe(0);
   });
 });
 

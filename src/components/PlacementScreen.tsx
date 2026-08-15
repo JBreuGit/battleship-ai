@@ -487,9 +487,9 @@ export function PlacementScreen({
           </div>
           {mode === "admiral" && (
             <ul className="mt-3 flex flex-col gap-1 text-[10px] text-foam-400/70">
-              <li>Carrier — recon flight scans a 3×3 area</li>
+              <li>Carrier — recon flight reveals ship cells in a 3×3 area</li>
               <li>Battleship — one 5-shell barrage cross</li>
-              <li>Cruiser — sonar ping, but exposes one of your cells</li>
+              <li>Cruiser — 5×5 sonar ping counts contacts, but exposes one of your cells</li>
               <li>Submarine — silently evades the first hit</li>
               <li>Destroyer — rapid fire: two shots in a turn</li>
             </ul>

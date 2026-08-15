@@ -109,13 +109,22 @@ export class AdvancedMediumAi extends MediumAi implements AdvancedAiPlayer {
     if (game.abilityAvailable(me, "recon")) {
       const center = randomScanCenter(this.rng);
       const report = game.useRecon(me, center);
-      this.absorbScan(report.cells, report.contacts > 0);
+      this.fireQueue.push(...report.contacts);
+      const contactKeys = new Set(report.contacts.map(coordKey));
+      for (const cell of report.cells) {
+        if (
+          !contactKeys.has(coordKey(cell)) &&
+          this.knowledge(cell) === "unknown"
+        ) {
+          this.setKnowledge(cell, "cleared");
+        }
+      }
       return [{ kind: "recon", center, report }];
     }
     if (game.abilityAvailable(me, "sonar")) {
       const center = randomScanCenter(this.rng);
       const report = game.useSonar(me, center);
-      this.absorbScan(report.cells, report.contact);
+      this.absorbScan(report.cells, report.contacts > 0);
       return [{ kind: "sonar", center, report }];
     }
     return null;
@@ -182,8 +191,9 @@ const BONUS_PER_HIDDEN_CONTACT = 4;
  * - while a wounded ship is outstanding it finishes it with a barrage
  *   cross or rapid fire;
  * - while searching it spends recon and sonar on the densest unscanned
- *   3x3 area, marking empty areas off exactly and weighting areas with
- *   unexplained contacts into its density map.
+ *   area, firing at recon-photographed ship cells directly, marking empty
+ *   areas off exactly and weighting sonar areas with unexplained contacts
+ *   into its density map.
  */
 export class AdvancedHardAi extends HardAi implements AdvancedAiPlayer {
   private readonly knownShipCells: Coordinate[] = [];
@@ -207,13 +217,23 @@ export class AdvancedHardAi extends HardAi implements AdvancedAiPlayer {
     if (game.abilityAvailable(me, "recon")) {
       const center = this.bestScanCenter();
       const report = game.useRecon(me, center);
-      this.absorbScan(report.cells, this.hiddenContacts(report));
+      this.knownShipCells.push(...report.contacts);
+      const contactKeys = new Set(report.contacts.map(coordKey));
+      for (const cell of report.cells) {
+        this.scanned.add(coordKey(cell));
+        if (
+          !contactKeys.has(coordKey(cell)) &&
+          this.knowledge(cell) === "unknown"
+        ) {
+          this.setKnowledge(cell, "cleared");
+        }
+      }
       return [{ kind: "recon", center, report }];
     }
     if (game.abilityAvailable(me, "sonar")) {
       const center = this.bestScanCenter();
       const report = game.useSonar(me, center);
-      this.absorbScan(report.cells, report.contact ? 1 : 0);
+      this.absorbScan(report.cells, this.hiddenContacts(report));
       return [{ kind: "sonar", center, report }];
     }
     return this.fireTurn(game, me);
@@ -284,8 +304,8 @@ export class AdvancedHardAi extends HardAi implements AdvancedAiPlayer {
     }
   }
 
-  /** Unexplained ship cells in a recon report (contacts minus known ones). */
-  private hiddenContacts(report: ReconReport): number {
+  /** Unexplained ship cells in a sonar report (contacts minus known ones). */
+  private hiddenContacts(report: SonarReport): number {
     const known = report.cells.filter((cell) => {
       const state = this.knowledge(cell);
       return state === "hit" || state === "sunk";
