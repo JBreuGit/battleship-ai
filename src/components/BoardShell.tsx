@@ -54,10 +54,10 @@ export function BoardShell({
         {enemy && (
           <div
             aria-hidden
-            className="fog-haze pointer-events-none absolute inset-0 z-[5] rounded-2xl"
+            className="fog-haze pointer-events-none absolute inset-0 z-0 rounded-2xl"
           />
         )}
-        <div className="grid grid-cols-[1.1rem_1fr] grid-rows-[1.1rem_1fr] gap-1">
+        <div className="relative z-10 grid grid-cols-[1.1rem_1fr] grid-rows-[1.1rem_1fr] gap-1">
           <div />
           <div className="grid grid-cols-10">
             {COLS.map((c) => (

@@ -44,6 +44,7 @@ export function AmbientParticles() {
             top: s.top,
             width: s.size,
             height: s.size,
+            opacity: s.opacity,
             "--speck-o": s.opacity,
             "--speck-x": s.driftX,
             "--speck-t": s.duration,
