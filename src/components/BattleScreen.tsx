@@ -14,6 +14,7 @@ import {
   ShipPlacement,
 } from "@/game/types";
 import { BoardShell } from "./BoardShell";
+import { GameOverModal } from "./GameOverModal";
 import { ShipId, ShipOverlay, ShipSprite } from "./ShipSprite";
 import { SoundControls } from "./useSound";
 
@@ -247,10 +248,12 @@ export function BattleScreen({
   return (
     <div className="flex w-full flex-col items-center gap-6">
       <div
-        className={`flex items-center gap-3 rounded-full border px-5 py-2 font-mono text-xs uppercase tracking-[0.25em] ${
-          turn === "player" && !winner
-            ? "border-accent-400/70 text-accent-300"
-            : "border-navy-line text-foam-400/80"
+        className={`flex items-center gap-3 rounded-full border bg-navy-900/80 px-5 py-2 text-xs font-semibold uppercase tracking-wider transition-all duration-200 ${
+          winner
+            ? "border-navy-line text-foam-400"
+            : turn === "player"
+              ? "animate-glow-pulse border-cyan-cta/60 text-cyan-cta"
+              : "animate-glow-pulse-coral border-coral-500/60 text-coral-400"
         }`}
       >
         <span
@@ -258,8 +261,8 @@ export function BattleScreen({
             winner
               ? "bg-foam-400/50"
               : turn === "player"
-                ? "bg-accent-400 animate-pulse-soft"
-                : "bg-ember-500 animate-pulse-soft"
+                ? "bg-cyan-cta animate-pulse-soft"
+                : "bg-coral-500 animate-pulse-soft"
           }`}
         />
         {winner
@@ -271,7 +274,11 @@ export function BattleScreen({
             : "Enemy is firing…"}
       </div>
 
-      <div className="flex w-full flex-col items-center gap-6 lg:flex-row lg:items-start lg:justify-center lg:gap-10">
+      <div
+        className={`flex w-full flex-col items-center gap-6 transition-[filter] duration-700 lg:flex-row lg:items-start lg:justify-center lg:gap-10 ${
+          winner === "enemy" ? "grayscale" : ""
+        }`}
+      >
         <BoardShell
           title="Enemy waters"
           subtitle={`${difficulty} AI · your shots: ${playerShots}`}
@@ -283,7 +290,7 @@ export function BattleScreen({
               shake?.board === "enemy" ? "animate-board-shake" : ""
             }`}
           >
-            <div className="grid grid-cols-10 rounded-sm border border-navy-line bg-navy-800">
+            <div className="grid grid-cols-10 overflow-hidden rounded-xl bg-navy-950/70">
             {enemyGrid.flatMap((row, y) =>
               row.map((state, x) => {
                 const isFx =
@@ -296,13 +303,13 @@ export function BattleScreen({
                     aria-label={`Fire at ${String.fromCharCode(65 + x)}${y + 1}`}
                     disabled={!clickable}
                     onClick={() => handleFire({ x, y })}
-                    className={`relative aspect-square border border-navy-line/60 ${
+                    className={`relative aspect-square rounded-md shadow-[inset_0_0_0_1px_rgba(6,14,28,0.55),inset_0_2px_3px_rgba(6,14,28,0.35)] transition-all duration-150 ease-out ${
                       state === "fog"
                         ? clickable
-                          ? "cursor-crosshair bg-navy-800 hover:bg-navy-700"
-                          : "bg-navy-800"
+                          ? "water-cell cursor-crosshair hover:z-10 hover:scale-105 hover:brightness-125"
+                          : "water-cell"
                         : state === "sunk"
-                          ? "bg-ember-700"
+                          ? "bg-coral-700"
                           : "bg-navy-900"
                     }`}
                   >
@@ -319,7 +326,7 @@ export function BattleScreen({
                 shipId={wreck.shipId}
                 placement={wreck.placement}
                 variant="sunk"
-                className="pointer-events-none z-10 animate-fade-in opacity-90"
+                className="pointer-events-none z-10 animate-sunk-bounce opacity-90"
               />
             ))}
           </div>
@@ -341,7 +348,7 @@ export function BattleScreen({
               shake?.board === "player" ? "animate-board-shake" : ""
             }`}
           >
-            <div className="grid grid-cols-10 rounded-sm border border-paper-line bg-paper-200">
+            <div className="grid grid-cols-10 overflow-hidden rounded-xl bg-navy-950/70">
               {playerGrid.flatMap((row, y) =>
                 row.map((state, x) => {
                   const isFx =
@@ -351,7 +358,13 @@ export function BattleScreen({
                   return (
                     <div
                       key={coordKey({ x, y })}
-                      className="relative aspect-square border border-paper-line/50 bg-paper-200"
+                      className={`relative aspect-square rounded-md shadow-[inset_0_0_0_1px_rgba(6,14,28,0.55),inset_0_2px_3px_rgba(6,14,28,0.35)] ${
+                        state === "sunk"
+                          ? "bg-coral-700/70"
+                          : state === "hit"
+                            ? "bg-navy-900"
+                            : "water-cell-light"
+                      }`}
                     >
                       <CellMark state={state} />
                       {isFx && (
@@ -376,7 +389,7 @@ export function BattleScreen({
                 shipId={wreck.shipId}
                 placement={wreck.placement}
                 variant="sunk"
-                className="pointer-events-none z-10 animate-fade-in"
+                className="pointer-events-none z-10 animate-sunk-bounce"
               />
             ))}
           </div>
@@ -384,39 +397,12 @@ export function BattleScreen({
       </div>
 
       {winner && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/85 p-4 backdrop-blur-sm">
-          <div className="animate-fade-in w-full max-w-sm rounded-lg border border-navy-line bg-navy-900 p-8 text-center shadow-[0_0_60px_rgba(255,150,51,0.15)]">
-            <p
-              className={`font-mono text-3xl font-bold uppercase tracking-[0.3em] ${
-                winner === "player" ? "text-accent-400" : "text-ember-500"
-              }`}
-            >
-              {winner === "player" ? "Victory" : "Defeat"}
-            </p>
-            <p className="mt-2 text-sm text-foam-400/80">
-              {winner === "player"
-                ? "Enemy fleet destroyed."
-                : "Your fleet has been destroyed."}
-            </p>
-            <dl className="mt-6 grid grid-cols-2 gap-3 font-mono text-xs uppercase tracking-widest">
-              <div className="rounded border border-navy-line bg-navy-800 p-3">
-                <dt className="text-foam-400/60">Your shots</dt>
-                <dd className="mt-1 text-xl text-accent-300">{playerShots}</dd>
-              </div>
-              <div className="rounded border border-navy-line bg-navy-800 p-3">
-                <dt className="text-foam-400/60">Enemy shots</dt>
-                <dd className="mt-1 text-xl text-accent-300">{enemyShots}</dd>
-              </div>
-            </dl>
-            <button
-              type="button"
-              onClick={onPlayAgain}
-              className="mt-8 w-full rounded-md border border-accent-500 bg-accent-500/15 px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.2em] text-accent-300 transition-colors hover:bg-accent-500/30"
-            >
-              Play again
-            </button>
-          </div>
-        </div>
+        <GameOverModal
+          winner={winner}
+          playerShots={playerShots}
+          enemyShots={enemyShots}
+          onPlayAgain={onPlayAgain}
+        />
       )}
     </div>
   );
@@ -426,7 +412,7 @@ export function CellMark({ state }: { state: string }) {
   if (state === "miss") {
     return (
       <span className="absolute inset-0 z-20 flex items-center justify-center">
-        <span className="h-[22%] w-[22%] rounded-full bg-foam-400/80" />
+        <span className="h-[24%] w-[24%] rounded-full bg-foam-200/70" />
       </span>
     );
   }
@@ -434,7 +420,7 @@ export function CellMark({ state }: { state: string }) {
     return (
       <span
         className={`absolute inset-0 z-20 flex items-center justify-center font-bold ${
-          state === "sunk" ? "text-ember-400" : "text-accent-400"
+          state === "sunk" ? "text-coral-600" : "text-coral-400"
         }`}
       >
         <svg viewBox="0 0 24 24" className="h-3/5 w-3/5" aria-hidden>
@@ -455,7 +441,7 @@ export function ShotOverlay({ outcome }: { outcome: FireOutcome }) {
   if (outcome === "miss") {
     return (
       <span className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
-        <span className="animate-splash-ring h-full w-full rounded-full border-2 border-foam-300" />
+        <span className="animate-splash-ring h-full w-full rounded-full border-2 border-foam-200" />
       </span>
     );
   }
@@ -463,8 +449,8 @@ export function ShotOverlay({ outcome }: { outcome: FireOutcome }) {
   return (
     <span className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
       <span
-        className={`animate-hit-burst animate-hit-glow h-full w-full rounded-sm ${
-          sunk ? "animate-sunk-flash bg-ember-500/70" : "bg-accent-500/60"
+        className={`animate-hit-burst animate-hit-glow h-full w-full rounded-md ${
+          sunk ? "animate-sunk-flash bg-coral-600/75" : "bg-coral-500/65"
         }`}
       />
     </span>
@@ -474,8 +460,8 @@ export function ShotOverlay({ outcome }: { outcome: FireOutcome }) {
 /** Fleet readout; `sunk` holds the fleet indices of sunk ships. */
 export function FleetStatus({ label, sunk }: { label: string; sunk: number[] }) {
   return (
-    <div className="rounded-md border border-navy-line bg-navy-900/80 p-3">
-      <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.25em] text-foam-400/70">
+    <div className="animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-3 shadow-panel">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-foam-400">
         {label}
       </p>
       <ul className="flex flex-col gap-1">
@@ -484,7 +470,7 @@ export function FleetStatus({ label, sunk }: { label: string; sunk: number[] }) 
           return (
             <li
               key={i}
-              className={isSunk ? "opacity-70" : ""}
+              className={isSunk ? "opacity-70 grayscale-[0.3] transition-all duration-300" : "transition-all duration-300"}
               style={{ width: `${length * 0.9}rem`, height: "1.1rem" }}
             >
               <ShipSprite shipId={i as ShipId} variant={isSunk ? "sunk" : "fleet"} />

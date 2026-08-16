@@ -25,6 +25,7 @@ import {
   placementFromCells,
 } from "./BattleScreen";
 import { BoardShell } from "./BoardShell";
+import { GameOverModal } from "./GameOverModal";
 import { ShipId, ShipOverlay } from "./ShipSprite";
 import { SoundControls } from "./useSound";
 
@@ -553,10 +554,12 @@ export function AdmiralBattleScreen({
   return (
     <div className="flex w-full flex-col items-center gap-5">
       <div
-        className={`flex items-center gap-3 rounded-full border px-5 py-2 font-mono text-xs uppercase tracking-[0.25em] ${
-          turn === "player" && !winner
-            ? "border-accent-400/70 text-accent-300"
-            : "border-navy-line text-foam-400/80"
+        className={`flex items-center gap-3 rounded-full border bg-navy-900/80 px-5 py-2 text-xs font-semibold uppercase tracking-wider transition-all duration-200 ${
+          winner
+            ? "border-navy-line text-foam-400"
+            : turn === "player"
+              ? "animate-glow-pulse border-cyan-cta/60 text-cyan-cta"
+              : "animate-glow-pulse-coral border-coral-500/60 text-coral-400"
         }`}
       >
         <span
@@ -564,8 +567,8 @@ export function AdmiralBattleScreen({
             winner
               ? "bg-foam-400/50"
               : turn === "player"
-                ? "bg-accent-400 animate-pulse-soft"
-                : "bg-ember-500 animate-pulse-soft"
+                ? "bg-cyan-cta animate-pulse-soft"
+                : "bg-coral-500 animate-pulse-soft"
           }`}
         />
         {winner
@@ -579,7 +582,7 @@ export function AdmiralBattleScreen({
 
       <p
         aria-live="polite"
-        className="min-h-[1.25rem] max-w-2xl text-center font-mono text-[11px] uppercase tracking-[0.15em] text-foam-300/90"
+        className="min-h-[1.25rem] max-w-2xl text-center text-xs font-medium text-foam-300"
       >
         {notice ?? ""}
       </p>
@@ -591,7 +594,11 @@ export function AdmiralBattleScreen({
         onUse={handleAbilityButton}
       />
 
-      <div className="flex w-full flex-col items-center gap-6 lg:flex-row lg:items-start lg:justify-center lg:gap-10">
+      <div
+        className={`flex w-full flex-col items-center gap-6 transition-[filter] duration-700 lg:flex-row lg:items-start lg:justify-center lg:gap-10 ${
+          winner === "enemy" ? "grayscale" : ""
+        }`}
+      >
         <BoardShell
           title="Enemy waters"
           subtitle={`${difficulty} AI · your shots: ${playerShots}`}
@@ -604,7 +611,7 @@ export function AdmiralBattleScreen({
             }`}
           >
             <div
-              className="grid grid-cols-10 rounded-sm border border-navy-line bg-navy-800"
+              className="grid grid-cols-10 overflow-hidden rounded-xl bg-navy-950/70"
               onPointerLeave={() => setHoverCell(null)}
             >
               {enemyGrid.flatMap((row, y) =>
@@ -626,33 +633,33 @@ export function AdmiralBattleScreen({
                       disabled={!clickable}
                       onClick={() => handleCellClick({ x, y })}
                       onPointerEnter={() => setHoverCell({ x, y })}
-                      className={`relative aspect-square border border-navy-line/60 ${
+                      className={`relative aspect-square rounded-md shadow-[inset_0_0_0_1px_rgba(6,14,28,0.55),inset_0_2px_3px_rgba(6,14,28,0.35)] transition-all duration-150 ease-out ${
                         state === "sunk"
-                          ? "bg-ember-700"
+                          ? "bg-coral-700"
                           : state === "suspect"
-                            ? "bg-accent-500/25"
+                            ? "bg-amber-cta/30"
                             : state === "cleared"
-                              ? "bg-navy-900/80"
+                              ? "bg-navy-900/85"
                               : state === "revealed"
-                                ? "bg-ember-500/30"
+                                ? "bg-coral-500/35"
                                 : fired
                                   ? "bg-navy-900"
                                   : clickable
-                                    ? "cursor-crosshair bg-navy-800 hover:bg-navy-700"
-                                    : "bg-navy-800"
+                                    ? "water-cell cursor-crosshair hover:z-10 hover:scale-105 hover:brightness-125"
+                                    : "water-cell"
                       }`}
                     >
                       {inPreview && (
-                        <span className="pointer-events-none absolute inset-0 z-40 border-2 border-accent-400 bg-accent-400/25" />
+                        <span className="pointer-events-none absolute inset-0 z-40 rounded-md border-2 border-amber-cta bg-amber-cta/25" />
                       )}
                       <CellMark state={state} />
                       {state === "revealed" && (
-                        <span className="absolute inset-0 z-20 flex items-center justify-center font-mono text-[10px] font-bold text-ember-400">
+                        <span className="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold text-coral-400">
                           ◎
                         </span>
                       )}
                       {state === "evaded" && (
-                        <span className="absolute inset-0 z-20 flex items-center justify-center font-mono text-[10px] font-bold text-foam-300">
+                        <span className="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold text-foam-200">
                           ≈
                         </span>
                       )}
@@ -667,10 +674,10 @@ export function AdmiralBattleScreen({
                       {inScan && (
                         <span
                           key={`scan-${scanFx.seq}`}
-                          className={`animate-scan-pulse pointer-events-none absolute inset-0 z-30 ${
+                          className={`animate-scan-pulse pointer-events-none absolute inset-0 z-30 rounded-md ${
                             scanFx.kind === "sonar"
-                              ? "bg-foam-300/45"
-                              : "bg-accent-300/40"
+                              ? "bg-lagoon-300/45"
+                              : "bg-amber-cta/40"
                           }`}
                         />
                       )}
@@ -685,7 +692,7 @@ export function AdmiralBattleScreen({
                 shipId={wreck.shipId}
                 placement={wreck.placement}
                 variant="sunk"
-                className="pointer-events-none z-10 animate-fade-in opacity-90"
+                className="pointer-events-none z-10 animate-sunk-bounce opacity-90"
               />
             ))}
           </div>
@@ -708,7 +715,7 @@ export function AdmiralBattleScreen({
               shake?.board === "player" ? "animate-board-shake" : ""
             }`}
           >
-            <div className="grid grid-cols-10 rounded-sm border border-paper-line bg-paper-200">
+            <div className="grid grid-cols-10 overflow-hidden rounded-xl bg-navy-950/70">
               {playerGrid.flatMap((row, y) =>
                 row.map((state, x) => {
                   const isFx =
@@ -722,10 +729,16 @@ export function AdmiralBattleScreen({
                   return (
                     <div
                       key={coordKey({ x, y })}
-                      className="relative aspect-square border border-paper-line/50 bg-paper-200"
+                      className={`relative aspect-square rounded-md shadow-[inset_0_0_0_1px_rgba(6,14,28,0.55),inset_0_2px_3px_rgba(6,14,28,0.35)] ${
+                        state === "sunk"
+                          ? "bg-coral-700/70"
+                          : state === "hit"
+                            ? "bg-navy-900"
+                            : "water-cell-light"
+                      }`}
                     >
                       {exposed && state !== "hit" && state !== "sunk" && (
-                        <span className="absolute inset-0 z-20 border-2 border-ember-500/80" />
+                        <span className="absolute inset-0 z-20 rounded-md border-2 border-coral-500/80" />
                       )}
                       <CellMark state={state} />
                       {isFx && fx.outcome !== "evaded" && (
@@ -739,10 +752,10 @@ export function AdmiralBattleScreen({
                       {inScan && (
                         <span
                           key={`scan-${scanFx.seq}`}
-                          className={`animate-scan-pulse pointer-events-none absolute inset-0 z-30 ${
+                          className={`animate-scan-pulse pointer-events-none absolute inset-0 z-30 rounded-md ${
                             scanFx.kind === "sonar"
-                              ? "bg-foam-400/50"
-                              : "bg-accent-400/45"
+                              ? "bg-lagoon-300/50"
+                              : "bg-amber-cta/45"
                           }`}
                         />
                       )}
@@ -765,7 +778,7 @@ export function AdmiralBattleScreen({
                 shipId={wreck.shipId}
                 placement={wreck.placement}
                 variant="sunk"
-                className="pointer-events-none z-10 animate-fade-in"
+                className="pointer-events-none z-10 animate-sunk-bounce"
               />
             ))}
           </div>
@@ -773,39 +786,12 @@ export function AdmiralBattleScreen({
       </div>
 
       {winner && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/85 p-4 backdrop-blur-sm">
-          <div className="animate-fade-in w-full max-w-sm rounded-lg border border-navy-line bg-navy-900 p-8 text-center shadow-[0_0_60px_rgba(255,150,51,0.15)]">
-            <p
-              className={`font-mono text-3xl font-bold uppercase tracking-[0.3em] ${
-                winner === "player" ? "text-accent-400" : "text-ember-500"
-              }`}
-            >
-              {winner === "player" ? "Victory" : "Defeat"}
-            </p>
-            <p className="mt-2 text-sm text-foam-400/80">
-              {winner === "player"
-                ? "Enemy fleet destroyed."
-                : "Your fleet has been destroyed."}
-            </p>
-            <dl className="mt-6 grid grid-cols-2 gap-3 font-mono text-xs uppercase tracking-widest">
-              <div className="rounded border border-navy-line bg-navy-800 p-3">
-                <dt className="text-foam-400/60">Your shots</dt>
-                <dd className="mt-1 text-xl text-accent-300">{playerShots}</dd>
-              </div>
-              <div className="rounded border border-navy-line bg-navy-800 p-3">
-                <dt className="text-foam-400/60">Enemy shots</dt>
-                <dd className="mt-1 text-xl text-accent-300">{enemyShots}</dd>
-              </div>
-            </dl>
-            <button
-              type="button"
-              onClick={onPlayAgain}
-              className="mt-8 w-full rounded-md border border-accent-500 bg-accent-500/15 px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.2em] text-accent-300 transition-colors hover:bg-accent-500/30"
-            >
-              Play again
-            </button>
-          </div>
-        </div>
+        <GameOverModal
+          winner={winner}
+          playerShots={playerShots}
+          enemyShots={enemyShots}
+          onPlayAgain={onPlayAgain}
+        />
       )}
     </div>
   );
@@ -835,19 +821,19 @@ function AbilityBar({
             disabled={!available}
             onClick={() => onUse(kind)}
             aria-pressed={armed}
-            className={`min-w-[9.5rem] flex-1 rounded border px-3 py-2 text-left transition-colors sm:flex-none ${
+            className={`min-w-[9.5rem] flex-1 rounded-xl border px-3 py-2 text-left shadow-btn transition-all duration-200 ease-out sm:flex-none ${
               armed
-                ? "border-accent-400 bg-accent-500/20 text-accent-300"
+                ? "border-amber-cta bg-amber-cta/20 text-amber-cta shadow-glow-amber"
                 : available
-                  ? "border-navy-line bg-navy-800 text-foam-300 hover:border-accent-400/60 hover:text-accent-300"
-                  : "cursor-not-allowed border-navy-line bg-navy-900 text-foam-400/40"
+                  ? "border-navy-line bg-navy-800 text-foam-300 hover:-translate-y-0.5 hover:border-cyan-cta/60 hover:text-cyan-cta active:scale-95"
+                  : "cursor-not-allowed border-navy-line/60 bg-navy-900 text-foam-400/40"
             }`}
           >
             <span className="flex items-baseline justify-between gap-2">
-              <span className="font-mono text-[11px] font-semibold uppercase tracking-widest">
+              <span className="text-[11px] font-bold uppercase tracking-wider">
                 {label}
               </span>
-              <span className="font-mono text-[10px] uppercase tracking-widest opacity-80">
+              <span className="rounded-full bg-navy-950/60 px-1.5 text-[10px] font-semibold">
                 ×{uses}
               </span>
             </span>
@@ -863,11 +849,11 @@ function AbilityBar({
 
 function StealthStatus({ game }: { game: AdvancedGame }) {
   return (
-    <div className="rounded-md border border-navy-line bg-navy-900/80 p-3">
-      <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.25em] text-foam-400/70">
+    <div className="animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-3 shadow-panel">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-foam-400">
         Silent running
       </p>
-      <ul className="flex flex-col gap-1 font-mono text-[10px] uppercase tracking-widest">
+      <ul className="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wider">
         <li className={game.stealthAvailable(PLAYER) ? "text-foam-300" : "text-foam-400/40"}>
           Your sub: {game.stealthAvailable(PLAYER) ? "ready" : "expended"}
         </li>
