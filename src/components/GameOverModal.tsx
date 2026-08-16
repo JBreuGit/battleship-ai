@@ -22,18 +22,20 @@ export function GameOverModal({
   const won = winner === "player";
 
   useEffect(() => {
-    if (!won) {
-      return;
-    }
-    const colors = ["#ff8c00", "#ff6b00", "#fbbf24", "#f1f5f9"];
+    const colors = won
+      ? ["#ff8c00", "#ff6b00", "#fbbf24", "#f1f5f9"]
+      : ["#00d9ff", "#0ea5e9", "#7deeff", "#f1f5f9"];
     confetti({
-      particleCount: 120,
-      spread: 75,
-      origin: { y: 0.6 },
+      particleCount: won ? 120 : 70,
+      spread: won ? 75 : 100,
+      origin: { y: won ? 0.6 : 0.45 },
       colors,
       zIndex: 60,
       disableForReducedMotion: true,
     });
+    if (!won) {
+      return;
+    }
     const timer = setTimeout(
       () =>
         confetti({
@@ -51,6 +53,15 @@ export function GameOverModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/85 p-4 backdrop-blur-sm">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage: won
+            ? "radial-gradient(ellipse 70% 55% at 50% 45%, rgba(255, 107, 0, 0.14), transparent 70%)"
+            : "radial-gradient(ellipse 70% 55% at 50% 45%, rgba(0, 217, 255, 0.12), transparent 70%)",
+        }}
+      />
       <div
         className={`animate-rise-in w-full max-w-sm rounded-2xl border p-8 text-center shadow-panel ${
           won

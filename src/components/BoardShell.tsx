@@ -45,12 +45,18 @@ export function BoardShell({
         ) : null}
       </header>
       <div
-        className={`rounded-2xl border p-2.5 shadow-panel backdrop-blur-sm sm:p-3.5 ${
+        className={`relative rounded-2xl border p-2.5 shadow-panel backdrop-blur-sm sm:p-3.5 ${
           enemy
             ? "border-devin-400/30 bg-navy-900/85"
             : "border-dutch-500/30 bg-navy-900/85"
         } ${shaking ? "animate-board-shake" : ""}`}
       >
+        {enemy && (
+          <div
+            aria-hidden
+            className="fog-haze pointer-events-none absolute inset-0 z-[5] rounded-2xl"
+          />
+        )}
         <div className="grid grid-cols-[1.1rem_1fr] grid-rows-[1.1rem_1fr] gap-1">
           <div />
           <div className="grid grid-cols-10">

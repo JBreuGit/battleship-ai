@@ -5,6 +5,7 @@ describe("Admiral mode UI", () => {
   it("starts an Admiral battle with the ability bar after selecting the mode", () => {
     render(<BattleshipGame />);
 
+    fireEvent.click(screen.getByRole("button", { name: /deploy fleet/i }));
     fireEvent.click(screen.getByRole("button", { name: /admiral/i }));
     fireEvent.click(screen.getByRole("button", { name: /random fleet/i }));
     fireEvent.click(screen.getByRole("button", { name: /commence battle/i }));
@@ -22,6 +23,7 @@ describe("Admiral mode UI", () => {
   it("keeps classic mode as the default without an ability bar", () => {
     render(<BattleshipGame />);
 
+    fireEvent.click(screen.getByRole("button", { name: /deploy fleet/i }));
     fireEvent.click(screen.getByRole("button", { name: /random fleet/i }));
     fireEvent.click(screen.getByRole("button", { name: /commence battle/i }));
 
