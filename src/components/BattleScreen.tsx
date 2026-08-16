@@ -309,6 +309,7 @@ export function BattleScreen({
           subtitle={`${difficulty} AI · your shots: ${playerShots}`}
           tone="navy"
         >
+          <div className="relative">
           <div
             key={shake?.board === "enemy" ? shake.seq : "steady"}
             className={`relative ${
@@ -339,7 +340,9 @@ export function BattleScreen({
                           : "water-cell"
                         : state === "sunk"
                           ? "cell-wreck-water"
-                          : "cell-scorched"
+                          : state === "hit"
+                            ? "cell-scorched"
+                            : "bg-navy-900"
                     }`}
                   >
                     <CellMark state={state} />
@@ -365,12 +368,13 @@ export function BattleScreen({
                 placement={wreck.placement}
               />
             ))}
-            {sunkFx?.board === "enemy" && (
-              <SunkExplosions key={sunkFx.seq} cells={sunkFx.cells} />
-            )}
-            {callout && sunkFx?.board === "enemy" && (
-              <SunkBanner callout={callout} />
-            )}
+          </div>
+          {sunkFx?.board === "enemy" && (
+            <SunkExplosions key={`sunkfx-${sunkFx.seq}`} cells={sunkFx.cells} />
+          )}
+          {callout && sunkFx?.board === "enemy" && (
+            <SunkBanner callout={callout} />
+          )}
           </div>
         </BoardShell>
 
@@ -388,6 +392,7 @@ export function BattleScreen({
           subtitle={`enemy shots: ${enemyShots}`}
           tone="paper"
         >
+          <div className="relative">
           <div
             key={shake?.board === "player" ? shake.seq : "steady"}
             className={`relative ${
@@ -449,12 +454,13 @@ export function BattleScreen({
                 placement={wreck.placement}
               />
             ))}
-            {sunkFx?.board === "player" && (
-              <SunkExplosions key={sunkFx.seq} cells={sunkFx.cells} />
-            )}
-            {callout && sunkFx?.board === "player" && (
-              <SunkBanner callout={callout} />
-            )}
+          </div>
+          {sunkFx?.board === "player" && (
+            <SunkExplosions key={`sunkfx-${sunkFx.seq}`} cells={sunkFx.cells} />
+          )}
+          {callout && sunkFx?.board === "player" && (
+            <SunkBanner callout={callout} />
+          )}
           </div>
         </BoardShell>
       </div>
