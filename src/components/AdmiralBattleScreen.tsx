@@ -26,6 +26,7 @@ import {
 } from "./BattleScreen";
 import { BoardShell } from "./BoardShell";
 import { GameOverModal } from "./GameOverModal";
+import { PLAYERS, Scoreboard } from "./PlayerBadge";
 import { ShipId, ShipOverlay } from "./ShipSprite";
 import { SoundControls } from "./useSound";
 
@@ -553,32 +554,20 @@ export function AdmiralBattleScreen({
 
   return (
     <div className="flex w-full flex-col items-center gap-5">
-      <div
-        className={`flex items-center gap-3 rounded-full border bg-navy-900/80 px-5 py-2 text-xs font-semibold uppercase tracking-wider transition-all duration-200 ${
+      <Scoreboard
+        activePlayer={winner ? null : turn === "player" ? "dutch" : "devin"}
+        dutchSunk={playerSunk.length}
+        devinSunk={enemySunk.length}
+        message={
           winner
-            ? "border-navy-line text-foam-400"
+            ? "Engagement over"
             : turn === "player"
-              ? "animate-glow-pulse border-cyan-cta/60 text-cyan-cta"
-              : "animate-glow-pulse-coral border-coral-500/60 text-coral-400"
-        }`}
-      >
-        <span
-          className={`h-2 w-2 rounded-full ${
-            winner
-              ? "bg-foam-400/50"
-              : turn === "player"
-                ? "bg-cyan-cta animate-pulse-soft"
-                : "bg-coral-500 animate-pulse-soft"
-          }`}
-        />
-        {winner
-          ? "Engagement over"
-          : turn === "player"
-            ? rapidFireActive
-              ? `Rapid fire — ${game.shotsRemaining} shots this turn`
-              : "Your turn — fire, or use a ship's ability"
-            : "Enemy is maneuvering…"}
-      </div>
+              ? rapidFireActive
+                ? `Rapid fire — ${game.shotsRemaining} shots this turn`
+                : "Your turn — fire, or use a ship's ability"
+              : `${PLAYERS.devin.name} is maneuvering…`
+        }
+      />
 
       <p
         aria-live="polite"
@@ -600,7 +589,7 @@ export function AdmiralBattleScreen({
         }`}
       >
         <BoardShell
-          title="Enemy waters"
+          title={`${PLAYERS.devin.name} waters`}
           subtitle={`${difficulty} AI · your shots: ${playerShots}`}
           tone="navy"
         >
@@ -699,13 +688,13 @@ export function AdmiralBattleScreen({
         </BoardShell>
 
         <div className="flex flex-row gap-4 lg:flex-col lg:pt-10">
-          <FleetStatus label="Enemy fleet" sunk={enemySunk} />
-          <FleetStatus label="Your fleet" sunk={playerSunk} />
+          <FleetStatus label={`${PLAYERS.devin.name} fleet`} sunk={enemySunk} />
+          <FleetStatus label={`${PLAYERS.dutch.name} fleet`} sunk={playerSunk} />
           <StealthStatus game={game} />
         </div>
 
         <BoardShell
-          title="Your grid"
+          title={`${PLAYERS.dutch.name} grid`}
           subtitle={`enemy shots: ${enemyShots}`}
           tone="paper"
         >
