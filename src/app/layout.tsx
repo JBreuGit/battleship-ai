@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Baloo_2, Geist_Mono, Inter } from "next/font/google";
+import { Baloo_2, Black_Ops_One, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -18,8 +18,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const blackOps = Black_Ops_One({
+  variable: "--font-black-ops",
+  subsets: ["latin"],
+  weight: "400",
+});
+
 export const metadata: Metadata = {
-  title: "Battleship — Naval Strike",
+  title: "Dutch Navy vs Devin AI — Battleship",
   description: "Single-player Battleship against an AI opponent",
 };
 
@@ -31,7 +37,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${baloo.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${baloo.variable} ${geistMono.variable} ${blackOps.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans">{children}</body>
     </html>

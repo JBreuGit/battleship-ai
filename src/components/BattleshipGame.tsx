@@ -8,8 +8,8 @@ import {
   createAdmiralSession,
 } from "./AdmiralBattleScreen";
 import { BattleScreen, Session, createSession } from "./BattleScreen";
+import { BridgeHeader, CoordinateReadout } from "./BridgeHeader";
 import { GameMode, PlacementScreen } from "./PlacementScreen";
-import { PLAYERS, PlayerBadge } from "./PlayerBadge";
 import { AmbientParticles, SplashScreen } from "./SplashScreen";
 import { useSound } from "./useSound";
 
@@ -23,6 +23,7 @@ export default function BattleshipGame() {
         <WaveBackdrop />
         <AmbientParticles />
         <SplashScreen onDeploy={() => setDeployed(true)} />
+        <CoordinateReadout />
       </div>
     );
   }
@@ -43,40 +44,22 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
       <WaveBackdrop />
       <AmbientParticles />
 
-      <header className="sticky top-0 z-40 border-b border-navy-line/60 bg-navy-950/80 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-3">
-            <span className="flex items-center -space-x-1.5">
-              <PlayerBadge player="dutch" size="sm" />
-              <PlayerBadge player="devin" size="sm" />
-            </span>
-            <div>
-              <h1 className="font-display text-lg font-extrabold tracking-wide sm:text-xl">
-                <span className="text-dutch-400">{PLAYERS.dutch.name}</span>
-                <span className="mx-1.5 text-[0.8em] text-foam-400">vs</span>
-                <span className="text-devin-400">{PLAYERS.devin.name}</span>
-              </h1>
-              <p className="-mt-0.5 hidden text-[11px] font-medium text-foam-400 sm:block">
-                Battleship — Naval Strike
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={sound.toggle}
-            aria-pressed={sound.enabled}
-            aria-label={`Sound ${sound.enabled ? "on" : "off"}`}
-            title={`Sound ${sound.enabled ? "on" : "off"}`}
-            className={`flex h-10 w-10 items-center justify-center rounded-xl border shadow-btn transition-all duration-200 ease-out active:scale-95 ${
-              sound.enabled
-                ? "border-cyan-cta/50 bg-navy-800 text-cyan-cta hover:shadow-glow-cyan"
-                : "border-navy-line bg-navy-900 text-foam-400 hover:text-foam-300"
-            }`}
-          >
-            <SoundIcon on={sound.enabled} />
-          </button>
-        </div>
-      </header>
+      <BridgeHeader>
+        <button
+          type="button"
+          onClick={sound.toggle}
+          aria-pressed={sound.enabled}
+          aria-label={`Sound ${sound.enabled ? "on" : "off"}`}
+          title={`Sound ${sound.enabled ? "on" : "off"}`}
+          className={`flex h-10 w-10 items-center justify-center rounded-xl border shadow-btn transition-all duration-200 ease-out active:scale-95 ${
+            sound.enabled
+              ? "border-cyan-cta/50 bg-navy-800 text-cyan-cta hover:shadow-glow-cyan"
+              : "border-navy-line bg-navy-900 text-foam-400 hover:text-foam-300"
+          }`}
+        >
+          <SoundIcon on={sound.enabled} />
+        </button>
+      </BridgeHeader>
 
       <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6">
         {session ? (
@@ -111,6 +94,8 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
           />
         )}
       </div>
+
+      <CoordinateReadout />
     </div>
   );
 }

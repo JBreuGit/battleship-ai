@@ -470,7 +470,7 @@ export function PlacementScreen({
           </p>
         </div>
 
-        <div className="animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
+        <div className="radar-panel animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
           <h2 className="mb-3 font-display text-base font-bold tracking-wide text-lagoon-300">
             Rules of engagement
           </h2>
@@ -506,7 +506,7 @@ export function PlacementScreen({
           )}
         </div>
 
-        <div className="animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
+        <div className="radar-panel animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
           <h2 className="mb-3 font-display text-base font-bold tracking-wide text-lagoon-300">
             Enemy commander
           </h2>
