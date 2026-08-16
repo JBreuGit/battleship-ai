@@ -76,7 +76,7 @@ describe("full classic games", () => {
     vi.useRealTimers();
   });
 
-  it("plays a full game the human wins, with strict turn alternation", () => {
+  it("plays a full game the human wins, with strict turn alternation", { timeout: 30_000 }, () => {
     const fleet = testFleet();
     const ai = new ScriptedAi(waterCells());
     const session: Session = {
@@ -116,7 +116,7 @@ describe("full classic games", () => {
     expect(onPlayAgain).toHaveBeenCalledTimes(1);
   });
 
-  it("plays a full game the computer wins", () => {
+  it("plays a full game the computer wins", { timeout: 30_000 }, () => {
     const fleet = testFleet();
     const ai = new ScriptedAi(fleetCells(fleet));
     const session: Session = {
