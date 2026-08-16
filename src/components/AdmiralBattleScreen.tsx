@@ -907,7 +907,7 @@ function AbilityBar({
 
 function StealthStatus({ game }: { game: AdvancedGame }) {
   return (
-    <div className="animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-3 shadow-panel">
+    <div className="radar-panel animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-3 shadow-panel">
       <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-foam-400">
         Silent running
       </p>
