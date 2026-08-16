@@ -48,6 +48,8 @@ export function ExplosionEffect({ delay }: { delay?: string }) {
     >
       <span className="animate-explosion-flash absolute inset-[6%] rounded-full bg-[radial-gradient(circle,#fff7ed_0%,#fdba74_35%,#f97316_60%,rgba(249,115,22,0)_75%)]" style={style} />
       <span className="animate-vignette-pulse absolute -inset-1 rounded-lg" style={style} />
+      <span className="animate-hit-ripple absolute -inset-[110%] rounded-full border border-lagoon-300/50" style={style} />
+      <span className="animate-hit-ripple absolute -inset-[110%] rounded-full border border-foam-200/40" style={delay ? { animationDelay: `calc(${delay} + 0.15s)` } : { animationDelay: "0.15s" }} />
       {SMOKE.map((s, i) => (
         <span
           key={`smoke-${i}`}

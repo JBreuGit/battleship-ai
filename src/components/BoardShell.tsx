@@ -2,6 +2,7 @@
 
 import { ReactNode } from "react";
 import { BOARD_SIZE } from "@/game/types";
+import { OceanLayer } from "./OceanLayer";
 import { PlayerBadge } from "./PlayerBadge";
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) =>
@@ -57,6 +58,7 @@ export function BoardShell({
             className="fog-haze pointer-events-none absolute inset-0 z-0 rounded-2xl"
           />
         )}
+        <OceanLayer enemy={enemy} />
         <div className="relative z-10 grid grid-cols-[1.1rem_1fr] grid-rows-[1.1rem_1fr] gap-1">
           <div />
           <div className="grid grid-cols-10">
