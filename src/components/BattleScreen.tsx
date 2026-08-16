@@ -315,8 +315,8 @@ export function BattleScreen({
             className={`relative ${
               shake?.board === "enemy"
                 ? shake.kind === "sunk"
-                  ? "animate-board-shake"
-                  : "animate-board-shake-soft"
+                  ? "z-30 animate-board-shake"
+                  : "z-30 animate-board-shake-soft"
                 : ""
             }`}
           >
@@ -398,8 +398,8 @@ export function BattleScreen({
             className={`relative ${
               shake?.board === "player"
                 ? shake.kind === "sunk"
-                  ? "animate-board-shake"
-                  : "animate-board-shake-soft"
+                  ? "z-30 animate-board-shake"
+                  : "z-30 animate-board-shake-soft"
                 : ""
             }`}
           >
