@@ -10,10 +10,23 @@ import {
 import { BattleScreen, Session, createSession } from "./BattleScreen";
 import { GameMode, PlacementScreen } from "./PlacementScreen";
 import { PLAYERS, PlayerBadge } from "./PlayerBadge";
+import { AmbientParticles, SplashScreen } from "./SplashScreen";
 import { useSound } from "./useSound";
 
 export default function BattleshipGame() {
+  const [deployed, setDeployed] = useState(false);
   const [round, setRound] = useState(0);
+
+  if (!deployed) {
+    return (
+      <div className="relative flex min-h-screen w-full flex-1 flex-col">
+        <WaveBackdrop />
+        <AmbientParticles />
+        <SplashScreen onDeploy={() => setDeployed(true)} />
+      </div>
+    );
+  }
+
   return <GameRound key={round} onPlayAgain={() => setRound((r) => r + 1)} />;
 }
 
@@ -28,6 +41,7 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
   return (
     <div className="relative flex min-h-screen w-full flex-1 flex-col">
       <WaveBackdrop />
+      <AmbientParticles />
 
       <header className="sticky top-0 z-40 border-b border-navy-line/60 bg-navy-950/80 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
