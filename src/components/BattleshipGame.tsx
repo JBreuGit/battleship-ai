@@ -9,6 +9,7 @@ import {
 } from "./AdmiralBattleScreen";
 import { BattleScreen, Session, createSession } from "./BattleScreen";
 import { GameMode, PlacementScreen } from "./PlacementScreen";
+import { PLAYERS, PlayerBadge } from "./PlayerBadge";
 import { useSound } from "./useSound";
 
 export default function BattleshipGame() {
@@ -31,13 +32,18 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
       <header className="sticky top-0 z-40 border-b border-navy-line/60 bg-navy-950/80 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <ShipBadge />
+            <span className="flex items-center -space-x-1.5">
+              <PlayerBadge player="dutch" size="sm" />
+              <PlayerBadge player="devin" size="sm" />
+            </span>
             <div>
-              <h1 className="font-display text-xl font-extrabold tracking-wide text-foam-100 sm:text-2xl">
-                Battleship
+              <h1 className="font-display text-lg font-extrabold tracking-wide sm:text-xl">
+                <span className="text-dutch-400">{PLAYERS.dutch.name}</span>
+                <span className="mx-1.5 text-[0.8em] text-foam-400">vs</span>
+                <span className="text-devin-400">{PLAYERS.devin.name}</span>
               </h1>
-              <p className="-mt-0.5 hidden text-[11px] font-medium text-lagoon-300/80 sm:block">
-                Naval Strike — vs AI
+              <p className="-mt-0.5 hidden text-[11px] font-medium text-foam-400 sm:block">
+                Battleship — Naval Strike
               </p>
             </div>
           </div>
@@ -117,29 +123,6 @@ function WaveBackdrop() {
         />
       </svg>
     </div>
-  );
-}
-
-function ShipBadge() {
-  return (
-    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-b from-water-400 to-water-600 shadow-btn">
-      <svg viewBox="0 0 24 24" className="h-6 w-6 text-foam-100" aria-hidden>
-        <path
-          d="M3 15 L21 15 L18.5 19 L5.5 19 Z"
-          fill="currentColor"
-          opacity="0.95"
-        />
-        <rect x="9" y="11" width="6" height="3" rx="1" fill="currentColor" />
-        <rect
-          x="11.25"
-          y="6"
-          width="1.5"
-          height="5"
-          rx="0.75"
-          fill="currentColor"
-        />
-      </svg>
-    </span>
   );
 }
 

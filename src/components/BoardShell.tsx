@@ -2,6 +2,7 @@
 
 import { ReactNode } from "react";
 import { BOARD_SIZE } from "@/game/types";
+import { PlayerBadge } from "./PlayerBadge";
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) =>
   String.fromCharCode(65 + i),
@@ -28,17 +29,13 @@ export function BoardShell({
 
   return (
     <section className="animate-rise-in flex w-full max-w-[26rem] flex-col gap-2 lg:max-w-[30rem]">
-      <header className="flex items-baseline justify-between px-2">
+      <header className="flex items-center justify-between px-2">
         <h2
           className={`flex items-center gap-2 font-display text-base font-bold tracking-wide ${
-            enemy ? "text-coral-400" : "text-lagoon-300"
+            enemy ? "text-devin-400" : "text-dutch-400"
           }`}
         >
-          <span
-            className={`h-2.5 w-2.5 rounded-full ${
-              enemy ? "bg-coral-500" : "bg-lagoon-400"
-            }`}
-          />
+          <PlayerBadge player={enemy ? "devin" : "dutch"} size="sm" />
           {title}
         </h2>
         {subtitle ? (
@@ -50,8 +47,8 @@ export function BoardShell({
       <div
         className={`rounded-2xl border p-2.5 shadow-panel backdrop-blur-sm sm:p-3.5 ${
           enemy
-            ? "border-coral-500/25 bg-navy-900/85"
-            : "border-lagoon-500/25 bg-navy-900/85"
+            ? "border-devin-400/30 bg-navy-900/85"
+            : "border-dutch-500/30 bg-navy-900/85"
         } ${shaking ? "animate-board-shake" : ""}`}
       >
         <div className="grid grid-cols-[1.1rem_1fr] grid-rows-[1.1rem_1fr] gap-1">

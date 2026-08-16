@@ -44,6 +44,18 @@
   --color-amber-cta: #fbbf24;
   --color-amber-deep: #f59e0b;
 
+  /* Player 1 — Dutch Navy (vibrant orange) */
+  --color-dutch-300: #ffb066;
+  --color-dutch-400: #ff8c00;
+  --color-dutch-500: #ff6b00;
+  --color-dutch-600: #d95500;
+
+  /* Player 2 — Devin AI (electric cyan) */
+  --color-devin-300: #7deeff;
+  --color-devin-400: #00d9ff;
+  --color-devin-500: #0ea5e9;
+  --color-devin-600: #0369a1;
+
   --font-sans: var(--font-inter);
   --font-display: var(--font-baloo);
   --font-mono: var(--font-geist-mono);
@@ -52,6 +64,8 @@
   --shadow-glow-cyan: 0 0 24px rgba(34, 211, 238, 0.35);
   --shadow-glow-amber: 0 0 24px rgba(251, 191, 36, 0.35);
   --shadow-glow-coral: 0 0 20px rgba(244, 63, 94, 0.5);
+  --shadow-glow-dutch: 0 0 24px rgba(255, 107, 0, 0.45);
+  --shadow-glow-devin: 0 0 24px rgba(0, 217, 255, 0.4);
   --shadow-btn: 0 4px 14px rgba(3, 12, 28, 0.5);
 }
 
@@ -258,6 +272,26 @@ body {
   }
 }
 
+@keyframes glow-pulse-dutch {
+  0%,
+  100% {
+    box-shadow: 0 0 10px 1px rgba(255, 107, 0, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 24px 6px rgba(255, 107, 0, 0.6);
+  }
+}
+
+@keyframes glow-pulse-devin {
+  0%,
+  100% {
+    box-shadow: 0 0 10px 1px rgba(0, 217, 255, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 24px 6px rgba(0, 217, 255, 0.6);
+  }
+}
+
 @keyframes radar-sweep {
   from {
     transform: rotate(0deg);
@@ -315,6 +349,14 @@ body {
   animation: glow-pulse-coral 1.8s ease-in-out infinite;
 }
 
+.animate-glow-pulse-dutch {
+  animation: glow-pulse-dutch 1.8s ease-in-out infinite;
+}
+
+.animate-glow-pulse-devin {
+  animation: glow-pulse-devin 1.8s ease-in-out infinite;
+}
+
 .animate-radar-sweep {
   animation: radar-sweep 2.4s linear infinite;
   transform-origin: center;
@@ -326,6 +368,8 @@ body {
   .animate-waves-drift,
   .animate-glow-pulse,
   .animate-glow-pulse-coral,
+  .animate-glow-pulse-dutch,
+  .animate-glow-pulse-devin,
   .animate-radar-sweep,
   .animate-pulse-soft {
     animation: none;
