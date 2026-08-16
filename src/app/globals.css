@@ -159,6 +159,103 @@ body {
   animation: water-shimmer 9s ease-in-out infinite;
 }
 
+/* ---- Living ocean ---- */
+
+.ocean-caustic {
+  position: absolute;
+  width: 70%;
+  height: 70%;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(165, 243, 252, 0.12) 0%, rgba(103, 232, 249, 0.05) 45%, transparent 70%);
+  filter: blur(8px);
+}
+
+.ocean-caustic-a {
+  top: -12%;
+  left: -8%;
+  animation: caustic-drift-a 18s ease-in-out infinite;
+}
+
+.ocean-caustic-b {
+  bottom: -15%;
+  right: -10%;
+  width: 85%;
+  height: 85%;
+  animation: caustic-drift-b 24s ease-in-out infinite;
+}
+
+@keyframes caustic-drift-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(28%, 18%) scale(1.15);
+  }
+  66% {
+    transform: translate(10%, 38%) scale(0.9);
+  }
+}
+
+@keyframes caustic-drift-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  40% {
+    transform: translate(-24%, -20%) scale(0.85);
+  }
+  70% {
+    transform: translate(-8%, -34%) scale(1.1);
+  }
+}
+
+.animate-current-drift {
+  animation: waves-drift 45s linear infinite;
+}
+
+.animate-current-drift-slow {
+  animation: waves-drift 75s linear infinite reverse;
+}
+
+@keyframes foam-fleck {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  12%,
+  30% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  45% {
+    opacity: 0;
+    transform: scale(1.3);
+  }
+}
+
+.animate-foam-fleck {
+  animation: foam-fleck var(--fleck-t, 8s) ease-in-out infinite;
+  animation-delay: var(--fleck-d, 0s);
+}
+
+@keyframes hit-ripple {
+  0% {
+    transform: scale(0.25);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+.animate-hit-ripple {
+  opacity: 0;
+  animation: hit-ripple 0.9s ease-out forwards;
+}
+
 @keyframes waves-drift {
   from {
     transform: translateX(0);
@@ -695,6 +792,20 @@ body {
 
   .radar-panel::after {
     animation: none;
+    opacity: 0;
+  }
+
+  .ocean-caustic-a,
+  .ocean-caustic-b,
+  .animate-current-drift,
+  .animate-current-drift-slow,
+  .animate-foam-fleck,
+  .animate-hit-ripple {
+    animation: none;
+  }
+
+  .animate-foam-fleck,
+  .animate-hit-ripple {
     opacity: 0;
   }
 }

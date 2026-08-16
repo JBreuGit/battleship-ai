@@ -2,6 +2,7 @@
 
 import { ReactNode } from "react";
 import { BOARD_SIZE } from "@/game/types";
+import { OceanLayer } from "./OceanLayer";
 import { PlayerBadge } from "./PlayerBadge";
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) =>
@@ -80,6 +81,7 @@ export function BoardShell({
             ))}
           </div>
           {children}
+          <OceanLayer enemy={enemy} />
         </div>
       </div>
     </section>
