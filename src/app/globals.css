@@ -187,6 +187,146 @@ body {
   }
 }
 
+@keyframes explosion-flash {
+  0% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  25% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes vignette-pulse {
+  0% {
+    box-shadow: inset 0 0 0 0 rgba(244, 63, 94, 0);
+  }
+  30% {
+    box-shadow: inset 0 0 14px 4px rgba(244, 63, 94, 0.65);
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 rgba(244, 63, 94, 0);
+  }
+}
+
+@keyframes smoke-puff {
+  0% {
+    transform: translateY(0) scale(0.5);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(-135%) scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes debris-arc {
+  0% {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+  40% {
+    transform: translate(calc(var(--dx) * 0.6), calc(-8px + var(--dy) * 0.1));
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx), var(--dy));
+    opacity: 0;
+  }
+}
+
+@keyframes droplet {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0.95;
+  }
+  45% {
+    transform: translate(calc(var(--dx) * 0.6), -9px);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(var(--dx), 6px);
+    opacity: 0;
+  }
+}
+
+@keyframes tile-brighten {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes smoke-wisp {
+  0% {
+    transform: translate(-50%, 0) scale(0.55);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.55;
+  }
+  100% {
+    transform: translate(-50%, -160%) scale(1.35);
+    opacity: 0;
+  }
+}
+
+@keyframes banner-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.92);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+}
+
+@keyframes sound-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 0.7;
+  }
+}
+
+@keyframes board-shake-soft {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  30% {
+    transform: translate(-3px, 2px);
+  }
+  65% {
+    transform: translate(3px, -2px);
+  }
+}
+
 @keyframes board-shake {
   0%,
   100% {
@@ -335,6 +475,58 @@ body {
   animation: board-shake 0.5s ease-in-out;
 }
 
+.animate-board-shake-soft {
+  animation: board-shake-soft 0.15s ease-out;
+}
+
+.animate-explosion-flash {
+  animation: explosion-flash 0.24s ease-out both;
+}
+
+.animate-vignette-pulse {
+  animation: vignette-pulse 0.5s ease-out both;
+}
+
+.animate-smoke-puff {
+  animation: smoke-puff 0.85s ease-out both;
+}
+
+.animate-debris-arc {
+  animation: debris-arc 0.55s cubic-bezier(0.3, 0.6, 0.6, 1) both;
+}
+
+.animate-droplet {
+  animation: droplet 0.5s ease-out both;
+}
+
+.animate-tile-brighten {
+  animation: tile-brighten 0.55s ease-out both;
+}
+
+.animate-smoke-wisp {
+  animation: smoke-wisp 4.2s ease-out infinite;
+}
+
+.animate-banner-in {
+  animation: banner-in 2.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-sound-pulse {
+  animation: sound-pulse 0.7s ease-in-out 3;
+}
+
+.cell-scorched {
+  background-color: var(--color-navy-950);
+  background-image:
+    radial-gradient(circle at 50% 55%, rgba(15, 16, 20, 0.95) 0%, rgba(24, 26, 32, 0.85) 40%, rgba(20, 30, 44, 0.4) 75%),
+    radial-gradient(circle at 35% 40%, rgba(249, 115, 22, 0.18) 0%, transparent 45%);
+}
+
+.cell-wreck-water {
+  background-color: rgba(40, 18, 26, 0.85);
+  background-image: radial-gradient(circle at 50% 50%, rgba(159, 18, 57, 0.28) 0%, rgba(24, 14, 22, 0.6) 80%);
+}
+
 .animate-fade-in {
   animation: fade-in 0.4s ease-out both;
 }
@@ -386,6 +578,8 @@ body {
   .animate-glow-pulse-devin,
   .animate-ship-bob,
   .animate-radar-sweep,
+  .animate-smoke-wisp,
+  .animate-sound-pulse,
   .animate-pulse-soft {
     animation: none;
   }

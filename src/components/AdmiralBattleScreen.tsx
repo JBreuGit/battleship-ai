@@ -28,6 +28,12 @@ import { BoardShell } from "./BoardShell";
 import { GameOverModal } from "./GameOverModal";
 import { PLAYERS, Scoreboard } from "./PlayerBadge";
 import { ShipId, ShipOverlay } from "./ShipSprite";
+import {
+  SunkBanner,
+  SunkCallout,
+  SunkExplosions,
+  WreckSmoke,
+} from "./ShotEffects";
 import { SoundControls } from "./useSound";
 
 type EnemyCell =
@@ -75,6 +81,12 @@ interface ScanFx {
   board: Side;
   cells: Coordinate[];
   kind: "recon" | "sonar";
+  seq: number;
+}
+
+interface SunkFx {
+  board: Side;
+  cells: Coordinate[];
   seq: number;
 }
 
@@ -149,9 +161,13 @@ export function AdmiralBattleScreen({
   const [exposedOwnCells, setExposedOwnCells] = useState<string[]>([]);
   const [fx, setFx] = useState<ShotFx | null>(null);
   const [scanFx, setScanFx] = useState<ScanFx | null>(null);
-  const [shake, setShake] = useState<{ board: Side; seq: number } | null>(
-    null,
-  );
+  const [sunkFx, setSunkFx] = useState<SunkFx | null>(null);
+  const [callout, setCallout] = useState<SunkCallout | null>(null);
+  const [shake, setShake] = useState<{
+    board: Side;
+    kind: "hit" | "sunk";
+    seq: number;
+  } | null>(null);
   const [winner, setWinner] = useState<Side | null>(null);
   const [notice, setNotice] = useState<string | null>(
     "Admiral mode — each ship carries one special ability.",
@@ -257,6 +273,9 @@ export function AdmiralBattleScreen({
         });
       }
 
+      if (result.outcome === "hit") {
+        setShake({ board, kind: "hit", seq: seqRef.current });
+      }
       if (result.outcome === "sunk" || result.outcome === "fleet-sunk") {
         const sunkBoard = game.board(board === "enemy" ? ENEMY : PLAYER);
         const shipId = (sunkBoard.shipIdAt(target) ?? 0) as ShipId;
@@ -272,8 +291,14 @@ export function AdmiralBattleScreen({
         if (result.sunkShip) {
           const placement = placementFromCells(result.sunkShip);
           setWrecks((prev) => [...prev, { shipId, placement }]);
+          setSunkFx({ board, cells: result.sunkShip, seq: seqRef.current });
         }
-        setShake({ board, seq: seqRef.current });
+        setCallout({
+          shipId,
+          attacker: board === "enemy" ? "dutch" : "devin",
+          seq: seqRef.current,
+        });
+        setShake({ board, kind: "sunk", seq: seqRef.current });
       }
       refresh();
     },
@@ -593,10 +618,15 @@ export function AdmiralBattleScreen({
           subtitle={`${difficulty} AI · your shots: ${playerShots}`}
           tone="navy"
         >
+          <div className="relative">
           <div
             key={shake?.board === "enemy" ? shake.seq : "steady"}
             className={`relative ${
-              shake?.board === "enemy" ? "animate-board-shake" : ""
+              shake?.board === "enemy"
+                ? shake.kind === "sunk"
+                  ? "animate-board-shake"
+                  : "animate-board-shake-soft"
+                : ""
             }`}
           >
             <div
@@ -624,16 +654,18 @@ export function AdmiralBattleScreen({
                       onPointerEnter={() => setHoverCell({ x, y })}
                       className={`relative aspect-square rounded-md shadow-[inset_0_0_0_1px_rgba(6,14,28,0.55),inset_0_2px_3px_rgba(6,14,28,0.35)] transition-all duration-150 ease-out ${
                         state === "sunk"
-                          ? "bg-coral-700"
-                          : state === "suspect"
-                            ? "bg-amber-cta/30"
-                            : state === "cleared"
-                              ? "bg-navy-900/85"
-                              : state === "revealed"
-                                ? "bg-coral-500/35"
-                                : fired
-                                  ? "bg-navy-900"
-                                  : clickable
+                          ? "cell-wreck-water"
+                          : state === "hit"
+                            ? "cell-scorched"
+                            : state === "suspect"
+                              ? "bg-amber-cta/30"
+                              : state === "cleared"
+                                ? "bg-navy-900/85"
+                                : state === "revealed"
+                                  ? "bg-coral-500/35"
+                                  : fired
+                                    ? "bg-navy-900"
+                                    : clickable
                                     ? "water-cell cursor-crosshair hover:z-10 hover:scale-105 hover:brightness-125"
                                     : "water-cell"
                       }`}
@@ -685,6 +717,19 @@ export function AdmiralBattleScreen({
                 className="pointer-events-none z-10 animate-sunk-bounce opacity-90"
               />
             ))}
+            {enemyWrecks.map((wreck) => (
+              <WreckSmoke
+                key={`smoke-${wreck.shipId}`}
+                placement={wreck.placement}
+              />
+            ))}
+          </div>
+          {sunkFx?.board === "enemy" && (
+            <SunkExplosions key={`sunkfx-${sunkFx.seq}`} cells={sunkFx.cells} />
+          )}
+          {callout && sunkFx?.board === "enemy" && (
+            <SunkBanner callout={callout} />
+          )}
           </div>
         </BoardShell>
 
@@ -703,10 +748,15 @@ export function AdmiralBattleScreen({
           subtitle={`enemy shots: ${enemyShots}`}
           tone="paper"
         >
+          <div className="relative">
           <div
             key={shake?.board === "player" ? shake.seq : "steady"}
             className={`relative ${
-              shake?.board === "player" ? "animate-board-shake" : ""
+              shake?.board === "player"
+                ? shake.kind === "sunk"
+                  ? "animate-board-shake"
+                  : "animate-board-shake-soft"
+                : ""
             }`}
           >
             <div className="grid grid-cols-10 overflow-hidden rounded-xl bg-navy-950/70">
@@ -725,9 +775,9 @@ export function AdmiralBattleScreen({
                       key={coordKey({ x, y })}
                       className={`relative aspect-square rounded-md shadow-[inset_0_0_0_1px_rgba(6,14,28,0.55),inset_0_2px_3px_rgba(6,14,28,0.35)] ${
                         state === "sunk"
-                          ? "bg-coral-700/70"
+                          ? "cell-wreck-water"
                           : state === "hit"
-                            ? "bg-navy-900"
+                            ? "cell-scorched"
                             : "water-cell-light"
                       }`}
                     >
@@ -776,6 +826,19 @@ export function AdmiralBattleScreen({
                 className="pointer-events-none z-10 animate-sunk-bounce"
               />
             ))}
+            {playerWrecks.map((wreck) => (
+              <WreckSmoke
+                key={`smoke-${wreck.shipId}`}
+                placement={wreck.placement}
+              />
+            ))}
+          </div>
+          {sunkFx?.board === "player" && (
+            <SunkExplosions key={`sunkfx-${sunkFx.seq}`} cells={sunkFx.cells} />
+          )}
+          {callout && sunkFx?.board === "player" && (
+            <SunkBanner callout={callout} />
+          )}
           </div>
         </BoardShell>
       </div>
