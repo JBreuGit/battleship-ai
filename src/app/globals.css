@@ -253,7 +253,7 @@ body {
 
 .animate-hit-ripple {
   opacity: 0;
-  animation: hit-ripple 0.9s ease-out both;
+  animation: hit-ripple 0.9s ease-out forwards;
 }
 
 @keyframes waves-drift {
