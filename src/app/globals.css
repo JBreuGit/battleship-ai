@@ -292,6 +292,16 @@ body {
   }
 }
 
+@keyframes ship-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(1.5px);
+  }
+}
+
 @keyframes radar-sweep {
   from {
     transform: rotate(0deg);
@@ -357,6 +367,10 @@ body {
   animation: glow-pulse-devin 1.8s ease-in-out infinite;
 }
 
+.animate-ship-bob {
+  animation: ship-bob 3.6s ease-in-out infinite;
+}
+
 .animate-radar-sweep {
   animation: radar-sweep 2.4s linear infinite;
   transform-origin: center;
@@ -370,6 +384,7 @@ body {
   .animate-glow-pulse-coral,
   .animate-glow-pulse-dutch,
   .animate-glow-pulse-devin,
+  .animate-ship-bob,
   .animate-radar-sweep,
   .animate-pulse-soft {
     animation: none;

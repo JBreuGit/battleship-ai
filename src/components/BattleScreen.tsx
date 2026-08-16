@@ -15,7 +15,7 @@ import {
 } from "@/game/types";
 import { BoardShell } from "./BoardShell";
 import { GameOverModal } from "./GameOverModal";
-import { PLAYERS, Scoreboard } from "./PlayerBadge";
+import { PLAYERS, PlayerId, Scoreboard } from "./PlayerBadge";
 import { ShipId, ShipOverlay, ShipSprite } from "./ShipSprite";
 import { SoundControls } from "./useSound";
 
@@ -315,6 +315,7 @@ export function BattleScreen({
                 shipId={wreck.shipId}
                 placement={wreck.placement}
                 variant="sunk"
+                player="devin"
                 className="pointer-events-none z-10 animate-sunk-bounce opacity-90"
               />
             ))}
@@ -322,7 +323,11 @@ export function BattleScreen({
         </BoardShell>
 
         <div className="flex flex-row gap-4 lg:flex-col lg:pt-10">
-          <FleetStatus label={`${PLAYERS.devin.name} fleet`} sunk={enemySunk} />
+          <FleetStatus
+            label={`${PLAYERS.devin.name} fleet`}
+            sunk={enemySunk}
+            player="devin"
+          />
           <FleetStatus label={`${PLAYERS.dutch.name} fleet`} sunk={playerSunk} />
         </div>
 
@@ -369,7 +374,8 @@ export function BattleScreen({
                 key={shipId}
                 shipId={shipId as ShipId}
                 placement={placement}
-                className="pointer-events-none z-10"
+                className="pointer-events-none z-10 animate-ship-bob"
+                style={{ animationDelay: `${shipId * 0.55}s` }}
               />
             ))}
             {playerWrecks.map((wreck) => (
@@ -447,7 +453,15 @@ export function ShotOverlay({ outcome }: { outcome: FireOutcome }) {
 }
 
 /** Fleet readout; `sunk` holds the fleet indices of sunk ships. */
-export function FleetStatus({ label, sunk }: { label: string; sunk: number[] }) {
+export function FleetStatus({
+  label,
+  sunk,
+  player = "dutch",
+}: {
+  label: string;
+  sunk: number[];
+  player?: PlayerId;
+}) {
   return (
     <div className="animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-3 shadow-panel">
       <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-foam-400">
@@ -462,7 +476,11 @@ export function FleetStatus({ label, sunk }: { label: string; sunk: number[] }) 
               className={isSunk ? "opacity-70 grayscale-[0.3] transition-all duration-300" : "transition-all duration-300"}
               style={{ width: `${length * 0.9}rem`, height: "1.1rem" }}
             >
-              <ShipSprite shipId={i as ShipId} variant={isSunk ? "sunk" : "fleet"} />
+              <ShipSprite
+                shipId={i as ShipId}
+                variant={isSunk ? "sunk" : "fleet"}
+                player={player}
+              />
             </li>
           );
         })}
