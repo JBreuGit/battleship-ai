@@ -681,6 +681,7 @@ export function AdmiralBattleScreen({
                 shipId={wreck.shipId}
                 placement={wreck.placement}
                 variant="sunk"
+                player="devin"
                 className="pointer-events-none z-10 animate-sunk-bounce opacity-90"
               />
             ))}
@@ -688,7 +689,11 @@ export function AdmiralBattleScreen({
         </BoardShell>
 
         <div className="flex flex-row gap-4 lg:flex-col lg:pt-10">
-          <FleetStatus label={`${PLAYERS.devin.name} fleet`} sunk={enemySunk} />
+          <FleetStatus
+            label={`${PLAYERS.devin.name} fleet`}
+            sunk={enemySunk}
+            player="devin"
+          />
           <FleetStatus label={`${PLAYERS.dutch.name} fleet`} sunk={playerSunk} />
           <StealthStatus game={game} />
         </div>
@@ -758,7 +763,8 @@ export function AdmiralBattleScreen({
                 key={shipId}
                 shipId={shipId as ShipId}
                 placement={placement}
-                className="pointer-events-none z-10"
+                className="pointer-events-none z-10 animate-ship-bob"
+                style={{ animationDelay: `${shipId * 0.55}s` }}
               />
             ))}
             {playerWrecks.map((wreck) => (
