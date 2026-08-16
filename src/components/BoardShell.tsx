@@ -16,7 +16,7 @@ export interface BoardShellProps {
   children: ReactNode;
 }
 
-/** Chart frame around a 10x10 grid: title bar plus A–J / 1–10 labels. */
+/** HUD panel around a 10x10 grid: title bar plus A–J / 1–10 labels. */
 export function BoardShell({
   title,
   subtitle,
@@ -24,26 +24,35 @@ export function BoardShell({
   shaking,
   children,
 }: BoardShellProps) {
-  const label =
-    tone === "navy" ? "text-foam-400/80" : "text-paper-300/90";
+  const enemy = tone === "navy";
 
   return (
-    <section className="flex w-full max-w-[26rem] flex-col gap-2 lg:max-w-[30rem]">
-      <header className="flex items-baseline justify-between px-1">
-        <h2 className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-[0.25em] text-accent-400">
-          <CompassRose />
+    <section className="animate-rise-in flex w-full max-w-[26rem] flex-col gap-2 lg:max-w-[30rem]">
+      <header className="flex items-baseline justify-between px-2">
+        <h2
+          className={`flex items-center gap-2 font-display text-base font-bold tracking-wide ${
+            enemy ? "text-coral-400" : "text-lagoon-300"
+          }`}
+        >
+          <span
+            className={`h-2.5 w-2.5 rounded-full ${
+              enemy ? "bg-coral-500" : "bg-lagoon-400"
+            }`}
+          />
           {title}
         </h2>
         {subtitle ? (
-          <p className="font-mono text-[10px] uppercase tracking-widest text-foam-400/70">
+          <p className="rounded-full bg-navy-800/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-foam-300">
             {subtitle}
           </p>
         ) : null}
       </header>
       <div
-        className={`rounded-md border border-navy-line bg-navy-900/80 p-2 shadow-[0_0_30px_rgba(8,22,37,0.8)] sm:p-3 ${
-          shaking ? "animate-board-shake" : ""
-        }`}
+        className={`rounded-2xl border p-2.5 shadow-panel backdrop-blur-sm sm:p-3.5 ${
+          enemy
+            ? "border-coral-500/25 bg-navy-900/85"
+            : "border-lagoon-500/25 bg-navy-900/85"
+        } ${shaking ? "animate-board-shake" : ""}`}
       >
         <div className="grid grid-cols-[1.1rem_1fr] grid-rows-[1.1rem_1fr] gap-1">
           <div />
@@ -51,7 +60,7 @@ export function BoardShell({
             {COLS.map((c) => (
               <span
                 key={c}
-                className={`flex items-center justify-center font-mono text-[9px] sm:text-[10px] ${label}`}
+                className="flex items-center justify-center text-[9px] font-semibold text-foam-400 sm:text-[10px]"
               >
                 {c}
               </span>
@@ -61,7 +70,7 @@ export function BoardShell({
             {ROWS.map((r) => (
               <span
                 key={r}
-                className={`flex items-center justify-center font-mono text-[9px] sm:text-[10px] ${label}`}
+                className="flex items-center justify-center text-[9px] font-semibold text-foam-400 sm:text-[10px]"
               >
                 {r}
               </span>
@@ -71,26 +80,5 @@ export function BoardShell({
         </div>
       </div>
     </section>
-  );
-}
-
-function CompassRose() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 opacity-80" aria-hidden>
-      <circle
-        cx="12"
-        cy="12"
-        r="10"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-      />
-      <path d="M12 3 L14 12 L12 21 L10 12 Z" fill="currentColor" />
-      <path
-        d="M3 12 L12 10 L21 12 L12 14 Z"
-        fill="currentColor"
-        opacity="0.55"
-      />
-    </svg>
   );
 }

@@ -330,23 +330,23 @@ export function PlacementScreen({
   const allPlaced = placements.every((p) => p !== null);
 
   return (
-    <div className="flex w-full flex-col items-center gap-6 lg:flex-row lg:items-start lg:justify-center lg:gap-10">
+    <div className="flex w-full flex-col items-center gap-6 pb-24 sm:pb-0 lg:flex-row lg:items-start lg:justify-center lg:gap-10">
       <BoardShell title="Your grid" subtitle="Deploy fleet" tone="paper">
         <div className="relative">
           <div
             ref={boardRef}
-            className="grid grid-cols-10 touch-none select-none rounded-sm border border-paper-line bg-paper-200"
+            className="grid grid-cols-10 touch-none select-none overflow-hidden rounded-xl bg-navy-950/70"
           >
             {Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, i) => {
               const cell = { x: i % BOARD_SIZE, y: Math.floor(i / BOARD_SIZE) };
               const key = coordKey(cell);
               const inPreview = previewCells.has(key);
               let cls =
-                "relative aspect-square border border-paper-line/50 transition-colors";
+                "relative aspect-square rounded-md shadow-[inset_0_0_0_1px_rgba(6,14,28,0.55),inset_0_2px_3px_rgba(6,14,28,0.35)] transition-all duration-150 ease-out";
               if (inPreview) {
-                cls += previewValid ? " bg-accent-400/80" : " bg-ember-500/80";
+                cls += previewValid ? " bg-cyan-cta/80" : " bg-coral-500/80";
               } else {
-                cls += " hover:bg-paper-300/70";
+                cls += " water-cell-light hover:brightness-125";
               }
               return (
                 <div
@@ -365,7 +365,7 @@ export function PlacementScreen({
                 placement={placement}
                 className={`cursor-grab touch-none ${
                   selected === shipId
-                    ? "[filter:drop-shadow(0_0_5px_rgba(255,180,84,0.85))]"
+                    ? "[filter:drop-shadow(0_0_6px_rgba(34,211,238,0.9))]"
                     : ""
                 }`}
                 onPointerDown={(e) => {
@@ -388,11 +388,11 @@ export function PlacementScreen({
       </BoardShell>
 
       <div className="flex w-full max-w-[26rem] flex-col gap-4 lg:max-w-sm">
-        <div className="rounded-md border border-navy-line bg-navy-900/80 p-4">
-          <h2 className="mb-3 font-mono text-xs font-semibold uppercase tracking-[0.25em] text-accent-400">
+        <div className="animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
+          <h2 className="mb-3 font-display text-base font-bold tracking-wide text-lagoon-300">
             Fleet manifest
           </h2>
-          <p className="mb-3 text-xs text-foam-400/80">
+          <p className="mb-3 text-xs text-foam-300">
             Drag a ship onto your grid (or select it and tap a square). Ships
             can&apos;t overlap, touch, or leave the grid.
           </p>
@@ -405,23 +405,23 @@ export function PlacementScreen({
                   <button
                     type="button"
                     onClick={() => setSelected(shipId)}
-                    className={`w-24 text-left font-mono text-[11px] uppercase tracking-wider ${
+                    className={`w-24 rounded-lg px-1 text-left text-[11px] font-bold uppercase tracking-wider transition-colors duration-150 ${
                       selected === shipId
-                        ? "text-accent-400"
-                        : "text-foam-400/80"
+                        ? "text-cyan-cta"
+                        : "text-foam-400 hover:text-foam-300"
                     }`}
                   >
                     {name}
                   </button>
                   {placed || dragging ? (
-                    <span className="font-mono text-[10px] uppercase tracking-widest text-foam-400/50">
+                    <span className="rounded-full bg-navy-800 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-lagoon-300/80">
                       {dragging ? "Moving…" : "Deployed"}
                     </span>
                   ) : (
                     <div
-                      className={`cursor-grab touch-none rounded-sm py-0.5 ${
+                      className={`cursor-grab touch-none rounded-lg bg-gradient-to-b from-navy-700/60 to-navy-800/60 px-1 py-0.5 shadow-btn transition-transform duration-150 hover:-translate-y-0.5 ${
                         selected === shipId
-                          ? "[filter:drop-shadow(0_0_4px_rgba(255,180,84,0.8))]"
+                          ? "[filter:drop-shadow(0_0_5px_rgba(34,211,238,0.85))]"
                           : ""
                       }`}
                       style={{
@@ -437,41 +437,41 @@ export function PlacementScreen({
               );
             })}
           </ul>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-4 hidden flex-wrap gap-2 sm:flex">
             <button
               type="button"
               onClick={rotateSelected}
-              className="rounded border border-navy-line bg-navy-800 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-foam-300 transition-colors hover:border-accent-400/60 hover:text-accent-300"
+              className="rounded-xl border border-navy-line bg-navy-800 px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-foam-300 shadow-btn transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-cyan-cta/60 hover:text-cyan-cta active:scale-95"
             >
               ⟳ Rotate ({orientations[selected] === "horizontal" ? "H" : "V"})
             </button>
             <button
               type="button"
               onClick={randomize}
-              className="rounded border border-navy-line bg-navy-800 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-foam-300 transition-colors hover:border-accent-400/60 hover:text-accent-300"
+              className="rounded-xl border border-navy-line bg-navy-800 px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-foam-300 shadow-btn transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-cyan-cta/60 hover:text-cyan-cta active:scale-95"
             >
               Random fleet
             </button>
             <button
               type="button"
               onClick={clear}
-              className="rounded border border-navy-line bg-navy-800 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-foam-300 transition-colors hover:border-accent-400/60 hover:text-accent-300"
+              className="rounded-xl border border-navy-line bg-navy-800 px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-foam-300 shadow-btn transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-cyan-cta/60 hover:text-cyan-cta active:scale-95"
             >
               Clear
             </button>
           </div>
           <p
             aria-live="polite"
-            className={`mt-3 min-h-[1.25rem] text-xs ${
-              message?.kind === "error" ? "text-ember-400" : "text-foam-300"
+            className={`mt-3 min-h-[1.25rem] text-xs font-medium ${
+              message?.kind === "error" ? "text-coral-400" : "text-foam-300"
             }`}
           >
             {message?.text ?? ""}
           </p>
         </div>
 
-        <div className="rounded-md border border-navy-line bg-navy-900/80 p-4">
-          <h2 className="mb-3 font-mono text-xs font-semibold uppercase tracking-[0.25em] text-accent-400">
+        <div className="animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
+          <h2 className="mb-3 font-display text-base font-bold tracking-wide text-lagoon-300">
             Rules of engagement
           </h2>
           <div className="flex gap-2">
@@ -480,13 +480,13 @@ export function PlacementScreen({
                 key={value}
                 type="button"
                 onClick={() => onModeChange(value)}
-                className={`flex-1 rounded border px-2 py-2 text-center transition-colors ${
+                className={`flex-1 rounded-xl border px-2 py-2 text-center shadow-btn transition-all duration-200 ease-out active:scale-95 ${
                   mode === value
-                    ? "border-accent-400 bg-navy-700 text-accent-300"
-                    : "border-navy-line bg-navy-800 text-foam-400/80 hover:border-accent-400/50"
+                    ? "border-cyan-cta bg-navy-700 text-cyan-cta shadow-glow-cyan"
+                    : "border-navy-line bg-navy-800 text-foam-400 hover:-translate-y-0.5 hover:border-cyan-cta/50"
                 }`}
               >
-                <span className="block font-mono text-[11px] font-semibold uppercase tracking-widest">
+                <span className="block text-[11px] font-bold uppercase tracking-wider">
                   {label}
                 </span>
                 <span className="mt-1 block text-[10px] opacity-70">
@@ -496,7 +496,7 @@ export function PlacementScreen({
             ))}
           </div>
           {mode === "admiral" && (
-            <ul className="mt-3 flex flex-col gap-1 text-[10px] text-foam-400/70">
+            <ul className="mt-3 flex flex-col gap-1 text-[10px] text-foam-400">
               <li>Carrier — recon flight reveals ship cells in a 3×3 area</li>
               <li>Battleship — one 5-shell barrage cross</li>
               <li>Cruiser — 5×5 sonar ping counts contacts, but exposes one of your cells</li>
@@ -506,8 +506,8 @@ export function PlacementScreen({
           )}
         </div>
 
-        <div className="rounded-md border border-navy-line bg-navy-900/80 p-4">
-          <h2 className="mb-3 font-mono text-xs font-semibold uppercase tracking-[0.25em] text-accent-400">
+        <div className="animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
+          <h2 className="mb-3 font-display text-base font-bold tracking-wide text-lagoon-300">
             Enemy commander
           </h2>
           <div className="flex gap-2">
@@ -516,13 +516,13 @@ export function PlacementScreen({
                 key={value}
                 type="button"
                 onClick={() => onDifficultyChange(value)}
-                className={`flex-1 rounded border px-2 py-2 text-center transition-colors ${
+                className={`flex-1 rounded-xl border px-2 py-2 text-center shadow-btn transition-all duration-200 ease-out active:scale-95 ${
                   difficulty === value
-                    ? "border-accent-400 bg-navy-700 text-accent-300"
-                    : "border-navy-line bg-navy-800 text-foam-400/80 hover:border-accent-400/50"
+                    ? "border-cyan-cta bg-navy-700 text-cyan-cta shadow-glow-cyan"
+                    : "border-navy-line bg-navy-800 text-foam-400 hover:-translate-y-0.5 hover:border-cyan-cta/50"
                 }`}
               >
-                <span className="block font-mono text-[11px] font-semibold uppercase tracking-widest">
+                <span className="block text-[11px] font-bold uppercase tracking-wider">
                   {label}
                 </span>
                 <span className="mt-1 block text-[10px] opacity-70">
@@ -539,9 +539,37 @@ export function PlacementScreen({
           onClick={() =>
             onStart(placements.filter((p): p is ShipPlacement => p !== null))
           }
-          className="rounded-md border border-accent-500 bg-accent-500/15 px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.2em] text-accent-300 transition-colors hover:bg-accent-500/30 disabled:cursor-not-allowed disabled:border-navy-line disabled:bg-navy-800 disabled:text-foam-400/40"
+          className="hidden rounded-xl bg-gradient-to-b from-amber-cta to-amber-deep px-4 py-3 font-display text-base font-bold tracking-wide text-navy-950 shadow-glow-amber transition-all duration-200 ease-out hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:bg-none disabled:bg-navy-800 disabled:text-foam-400/40 disabled:shadow-none sm:block"
         >
           {allPlaced ? "Commence battle" : "Deploy all ships to begin"}
+        </button>
+      </div>
+
+      {/* Mobile bottom action bar */}
+      <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-2 border-t border-navy-line/60 bg-navy-950/90 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-md sm:hidden">
+        <button
+          type="button"
+          onClick={rotateSelected}
+          className="flex-1 rounded-xl border border-navy-line bg-navy-800 px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-foam-300 shadow-btn transition-all duration-200 ease-out active:scale-95"
+        >
+          ⟳ Rotate
+        </button>
+        <button
+          type="button"
+          onClick={randomize}
+          className="flex-1 rounded-xl border border-navy-line bg-navy-800 px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-foam-300 shadow-btn transition-all duration-200 ease-out active:scale-95"
+        >
+          Random
+        </button>
+        <button
+          type="button"
+          disabled={!allPlaced}
+          onClick={() =>
+            onStart(placements.filter((p): p is ShipPlacement => p !== null))
+          }
+          className="flex-[1.4] rounded-xl bg-gradient-to-b from-amber-cta to-amber-deep px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-navy-950 shadow-glow-amber transition-all duration-200 ease-out active:scale-95 disabled:cursor-not-allowed disabled:bg-none disabled:bg-navy-800 disabled:text-foam-400/40 disabled:shadow-none"
+        >
+          {allPlaced ? "Battle!" : "Deploy all"}
         </button>
       </div>
 

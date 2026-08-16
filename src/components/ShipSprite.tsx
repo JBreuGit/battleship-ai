@@ -18,18 +18,18 @@ interface Palette {
 
 const PALETTES: Record<ShipVariant, Palette> = {
   fleet: {
-    hull: "#4d6076",
-    hullEdge: "#2c3d52",
-    deck: "#5d7189",
-    detail: "#33455c",
-    accent: "#8fa3ba",
+    hull: "#64748b",
+    hullEdge: "#334155",
+    deck: "#94a3b8",
+    detail: "#3f4f63",
+    accent: "#cbd5e1",
   },
   sunk: {
-    hull: "#3b2f2a",
-    hullEdge: "#241c19",
-    deck: "#453833",
-    detail: "#2a211d",
-    accent: "#b53d1f",
+    hull: "#44302c",
+    hullEdge: "#2a1d1a",
+    deck: "#544039",
+    detail: "#33241f",
+    accent: "#e11d48",
   },
 };
 
