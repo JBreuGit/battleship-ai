@@ -17,6 +17,14 @@ import { BoardShell } from "./BoardShell";
 import { GameOverModal } from "./GameOverModal";
 import { PLAYERS, PlayerId, Scoreboard } from "./PlayerBadge";
 import { ShipId, ShipOverlay, ShipSprite } from "./ShipSprite";
+import {
+  ExplosionEffect,
+  SplashEffect,
+  SunkBanner,
+  SunkCallout,
+  SunkExplosions,
+  WreckSmoke,
+} from "./ShotEffects";
 import { SoundControls } from "./useSound";
 
 type EnemyCell = "fog" | "miss" | "hit" | "sunk";
@@ -66,6 +74,12 @@ interface ShotFx {
   seq: number;
 }
 
+interface SunkFx {
+  board: Side;
+  cells: Coordinate[];
+  seq: number;
+}
+
 export interface BattleScreenProps {
   session: Session;
   difficulty: Difficulty;
@@ -107,9 +121,13 @@ export function BattleScreen({
   const [enemyWrecks, setEnemyWrecks] = useState<Wreck[]>([]);
   const [playerWrecks, setPlayerWrecks] = useState<Wreck[]>([]);
   const [fx, setFx] = useState<ShotFx | null>(null);
-  const [shake, setShake] = useState<{ board: Side; seq: number } | null>(
-    null,
-  );
+  const [sunkFx, setSunkFx] = useState<SunkFx | null>(null);
+  const [callout, setCallout] = useState<SunkCallout | null>(null);
+  const [shake, setShake] = useState<{
+    board: Side;
+    kind: "hit" | "sunk";
+    seq: number;
+  } | null>(null);
   const [winner, setWinner] = useState<Side | null>(null);
 
   const seqRef = useRef(0);
@@ -163,14 +181,23 @@ export function BattleScreen({
     });
     sound.play("fire");
     later(260, () => sound.play(soundFor(result.outcome)));
+    if (result.outcome === "hit") {
+      setShake({ board: "player", kind: "hit", seq: seqRef.current });
+    }
     if (result.outcome === "sunk" || result.outcome === "fleet-sunk") {
       const shipId = (playerBoard.shipIdAt(target) ?? 0) as ShipId;
       setPlayerSunk((prev) => [...prev, shipId]);
       if (result.sunkShip) {
         const placement = placementFromCells(result.sunkShip);
         setPlayerWrecks((prev) => [...prev, { shipId, placement }]);
+        setSunkFx({
+          board: "player",
+          cells: result.sunkShip,
+          seq: seqRef.current,
+        });
       }
-      setShake({ board: "player", seq: seqRef.current });
+      setCallout({ shipId, attacker: "devin", seq: seqRef.current });
+      setShake({ board: "player", kind: "sunk", seq: seqRef.current });
     }
 
     if (result.outcome === "fleet-sunk") {
@@ -221,14 +248,23 @@ export function BattleScreen({
       });
       sound.play("fire");
       later(260, () => sound.play(soundFor(result.outcome)));
+      if (result.outcome === "hit") {
+        setShake({ board: "enemy", kind: "hit", seq: seqRef.current });
+      }
       if (result.outcome === "sunk" || result.outcome === "fleet-sunk") {
         const shipId = (enemyBoard.shipIdAt(cell) ?? 0) as ShipId;
         setEnemySunk((prev) => [...prev, shipId]);
         if (result.sunkShip) {
           const placement = placementFromCells(result.sunkShip);
           setEnemyWrecks((prev) => [...prev, { shipId, placement }]);
+          setSunkFx({
+            board: "enemy",
+            cells: result.sunkShip,
+            seq: seqRef.current,
+          });
         }
-        setShake({ board: "enemy", seq: seqRef.current });
+        setCallout({ shipId, attacker: "dutch", seq: seqRef.current });
+        setShake({ board: "enemy", kind: "sunk", seq: seqRef.current });
       }
 
       if (result.outcome === "fleet-sunk") {
@@ -276,7 +312,11 @@ export function BattleScreen({
           <div
             key={shake?.board === "enemy" ? shake.seq : "steady"}
             className={`relative ${
-              shake?.board === "enemy" ? "animate-board-shake" : ""
+              shake?.board === "enemy"
+                ? shake.kind === "sunk"
+                  ? "animate-board-shake"
+                  : "animate-board-shake-soft"
+                : ""
             }`}
           >
             <div className="grid grid-cols-10 overflow-hidden rounded-xl bg-navy-950/70">
@@ -298,8 +338,8 @@ export function BattleScreen({
                           ? "water-cell cursor-crosshair hover:z-10 hover:scale-105 hover:brightness-125"
                           : "water-cell"
                         : state === "sunk"
-                          ? "bg-coral-700"
-                          : "bg-navy-900"
+                          ? "cell-wreck-water"
+                          : "cell-scorched"
                     }`}
                   >
                     <CellMark state={state} />
@@ -319,6 +359,18 @@ export function BattleScreen({
                 className="pointer-events-none z-10 animate-sunk-bounce opacity-90"
               />
             ))}
+            {enemyWrecks.map((wreck) => (
+              <WreckSmoke
+                key={`smoke-${wreck.shipId}`}
+                placement={wreck.placement}
+              />
+            ))}
+            {sunkFx?.board === "enemy" && (
+              <SunkExplosions key={sunkFx.seq} cells={sunkFx.cells} />
+            )}
+            {callout && sunkFx?.board === "enemy" && (
+              <SunkBanner callout={callout} />
+            )}
           </div>
         </BoardShell>
 
@@ -339,7 +391,11 @@ export function BattleScreen({
           <div
             key={shake?.board === "player" ? shake.seq : "steady"}
             className={`relative ${
-              shake?.board === "player" ? "animate-board-shake" : ""
+              shake?.board === "player"
+                ? shake.kind === "sunk"
+                  ? "animate-board-shake"
+                  : "animate-board-shake-soft"
+                : ""
             }`}
           >
             <div className="grid grid-cols-10 overflow-hidden rounded-xl bg-navy-950/70">
@@ -354,9 +410,9 @@ export function BattleScreen({
                       key={coordKey({ x, y })}
                       className={`relative aspect-square rounded-md shadow-[inset_0_0_0_1px_rgba(6,14,28,0.55),inset_0_2px_3px_rgba(6,14,28,0.35)] ${
                         state === "sunk"
-                          ? "bg-coral-700/70"
+                          ? "cell-wreck-water"
                           : state === "hit"
-                            ? "bg-navy-900"
+                            ? "cell-scorched"
                             : "water-cell-light"
                       }`}
                     >
@@ -387,6 +443,18 @@ export function BattleScreen({
                 className="pointer-events-none z-10 animate-sunk-bounce"
               />
             ))}
+            {playerWrecks.map((wreck) => (
+              <WreckSmoke
+                key={`smoke-${wreck.shipId}`}
+                placement={wreck.placement}
+              />
+            ))}
+            {sunkFx?.board === "player" && (
+              <SunkExplosions key={sunkFx.seq} cells={sunkFx.cells} />
+            )}
+            {callout && sunkFx?.board === "player" && (
+              <SunkBanner callout={callout} />
+            )}
           </div>
         </BoardShell>
       </div>
@@ -415,7 +483,7 @@ export function CellMark({ state }: { state: string }) {
     return (
       <span
         className={`absolute inset-0 z-20 flex items-center justify-center font-bold ${
-          state === "sunk" ? "text-coral-600" : "text-coral-400"
+          state === "sunk" ? "text-coral-600/45" : "text-coral-400"
         }`}
       >
         <svg viewBox="0 0 24 24" className="h-3/5 w-3/5" aria-hidden>
@@ -434,20 +502,12 @@ export function CellMark({ state }: { state: string }) {
 
 export function ShotOverlay({ outcome }: { outcome: FireOutcome }) {
   if (outcome === "miss") {
-    return (
-      <span className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
-        <span className="animate-splash-ring h-full w-full rounded-full border-2 border-foam-200" />
-      </span>
-    );
+    return <SplashEffect />;
   }
-  const sunk = outcome !== "hit";
   return (
-    <span className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
-      <span
-        className={`animate-hit-burst animate-hit-glow h-full w-full rounded-md ${
-          sunk ? "animate-sunk-flash bg-coral-600/75" : "bg-coral-500/65"
-        }`}
-      />
+    <span className="pointer-events-none absolute inset-0 z-30">
+      <span className="animate-hit-glow absolute inset-0 rounded-md" />
+      <ExplosionEffect />
     </span>
   );
 }
