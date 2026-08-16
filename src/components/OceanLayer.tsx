@@ -30,7 +30,7 @@ export function OceanLayer({ enemy }: { enemy?: boolean }) {
   return (
     <div
       aria-hidden
-      className={`pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-2xl ${
+      className={`pointer-events-none relative z-20 col-start-2 row-start-2 overflow-hidden rounded-lg ${
         enemy ? "opacity-55" : "opacity-90"
       }`}
     >
