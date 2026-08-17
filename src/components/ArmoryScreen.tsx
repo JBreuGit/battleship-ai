@@ -81,7 +81,7 @@ export function ArmoryScreen({
           <p className="font-mono text-[10px] uppercase tracking-widest text-foam-400">
             Dutch Navy · Commanding Officer
           </p>
-          <p className="truncate font-display text-xl font-extrabold tracking-wide text-foam-100">
+          <p className="font-display text-lg font-extrabold tracking-wide text-foam-100 sm:text-xl">
             {rank.title}
           </p>
           <p className="mt-0.5 font-mono text-[11px] text-foam-300">
