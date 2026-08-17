@@ -3,7 +3,8 @@
 import confetti from "canvas-confetti";
 import { useEffect } from "react";
 import type { Side } from "./BattleScreen";
-import { PLAYERS, PlayerBadge } from "./PlayerBadge";
+import { PLAYERS } from "./PlayerBadge";
+import { CALLSIGNS, PlayerAvatarBadge } from "./PlayerAvatar";
 
 export interface GameOverModalProps {
   winner: Side;
@@ -69,8 +70,11 @@ export function GameOverModal({
             : "border-devin-400/40 bg-navy-900 shadow-glow-devin"
         }`}
       >
-        <div className="flex justify-center">
-          <PlayerBadge player={won ? "dutch" : "devin"} size="lg" active />
+        <div className="flex flex-col items-center gap-1.5">
+          <PlayerAvatarBadge player={won ? "dutch" : "devin"} size="xl" active />
+          <p className="font-mono text-[10px] uppercase tracking-widest text-foam-400">
+            {CALLSIGNS[won ? "dutch" : "devin"]}
+          </p>
         </div>
         <p
           className={`mt-4 font-display text-4xl font-extrabold tracking-wide ${

@@ -21,7 +21,8 @@ import {
 } from "@/game/types";
 import { BoardShell } from "./BoardShell";
 import { GameOverModal } from "./GameOverModal";
-import { PLAYERS, PlayerId, Scoreboard } from "./PlayerBadge";
+import { PLAYERS, PlayerId } from "./PlayerBadge";
+import { Scoreboard } from "./PlayerAvatar";
 import { ShipId, ShipOverlay, ShipSprite } from "./ShipSprite";
 import {
   DamageSmoke,

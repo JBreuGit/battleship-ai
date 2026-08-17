@@ -3,7 +3,7 @@
 import { ReactNode } from "react";
 import { BOARD_SIZE } from "@/game/types";
 import { OceanLayer } from "./OceanLayer";
-import { PlayerBadge } from "./PlayerBadge";
+import { PlayerAvatarBadge } from "./PlayerAvatar";
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) =>
   String.fromCharCode(65 + i),
@@ -36,7 +36,7 @@ export function BoardShell({
             enemy ? "text-devin-400" : "text-dutch-400"
           }`}
         >
-          <PlayerBadge player={enemy ? "devin" : "dutch"} size="sm" />
+          <PlayerAvatarBadge player={enemy ? "devin" : "dutch"} size="sm" />
           {title}
         </h2>
         {subtitle ? (
