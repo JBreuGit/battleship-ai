@@ -20,6 +20,7 @@ import {
 } from "@/game/types";
 import { BoardShell } from "./BoardShell";
 import { ShipId, ShipOverlay, ShipSprite } from "./ShipSprite";
+import { SoundControls } from "./useSoundManager";
 
 const SHIP_NAMES = [
   "Carrier",
@@ -79,6 +80,7 @@ export interface PlacementScreenProps {
   mode: GameMode;
   onModeChange: (mode: GameMode) => void;
   onStart: (fleet: ShipPlacement[]) => void;
+  sound?: SoundControls;
 }
 
 export function PlacementScreen({
@@ -87,6 +89,7 @@ export function PlacementScreen({
   mode,
   onModeChange,
   onStart,
+  sound,
 }: PlacementScreenProps) {
   const [placements, setPlacements] = useState<(ShipPlacement | null)[]>(() =>
     Array.from(FLEET_LENGTHS, () => null),
@@ -104,10 +107,12 @@ export function PlacementScreen({
   const dragRef = useRef<DragState | null>(null);
   const placementsRef = useRef<(ShipPlacement | null)[]>(placements);
   const orientationsRef = useRef<Orientation[]>(orientations);
+  const soundRef = useRef<SoundControls | undefined>(sound);
 
   useEffect(() => {
     placementsRef.current = placements;
     orientationsRef.current = orientations;
+    soundRef.current = sound;
   });
 
   const cellFromPointer = useCallback(
@@ -150,6 +155,7 @@ export function PlacementScreen({
         return next;
       });
       setMessage(null);
+      soundRef.current?.play("click");
       return true;
     },
     [],
@@ -258,6 +264,7 @@ export function PlacementScreen({
   }, [dragActive, cellFromPointer, tryPlace]);
 
   const rotateSelected = () => {
+    sound?.play("click");
     const placement = placements[selected];
     if (!placement) {
       setOrientations((prev) => {
@@ -295,6 +302,7 @@ export function PlacementScreen({
   };
 
   const randomize = () => {
+    sound?.play("click");
     const fleet = randomFleet(createRng(Math.floor(Math.random() * 2 ** 32)));
     setPlacements(fleet);
     setOrientations(fleet.map((p) => p.orientation));
@@ -302,6 +310,7 @@ export function PlacementScreen({
   };
 
   const clear = () => {
+    sound?.play("click");
     setPlacements(Array.from(FLEET_LENGTHS, () => null));
     setMessage(null);
   };
@@ -404,7 +413,10 @@ export function PlacementScreen({
                 <li key={shipId} className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => setSelected(shipId)}
+                    onClick={() => {
+                      sound?.play("click");
+                      setSelected(shipId);
+                    }}
                     className={`w-24 rounded-lg px-1 text-left text-[11px] font-bold uppercase tracking-wider transition-colors duration-150 ${
                       selected === shipId
                         ? "text-cyan-cta"
@@ -479,7 +491,10 @@ export function PlacementScreen({
               <button
                 key={value}
                 type="button"
-                onClick={() => onModeChange(value)}
+                onClick={() => {
+                  sound?.play("click");
+                  onModeChange(value);
+                }}
                 className={`flex-1 rounded-xl border px-2 py-2 text-center shadow-btn transition-all duration-200 ease-out active:scale-95 ${
                   mode === value
                     ? "border-cyan-cta bg-navy-700 text-cyan-cta shadow-glow-cyan"
@@ -515,7 +530,10 @@ export function PlacementScreen({
               <button
                 key={value}
                 type="button"
-                onClick={() => onDifficultyChange(value)}
+                onClick={() => {
+                  sound?.play("click");
+                  onDifficultyChange(value);
+                }}
                 className={`flex-1 rounded-xl border px-2 py-2 text-center shadow-btn transition-all duration-200 ease-out active:scale-95 ${
                   difficulty === value
                     ? "border-cyan-cta bg-navy-700 text-cyan-cta shadow-glow-cyan"
@@ -536,9 +554,10 @@ export function PlacementScreen({
         <button
           type="button"
           disabled={!allPlaced}
-          onClick={() =>
-            onStart(placements.filter((p): p is ShipPlacement => p !== null))
-          }
+          onClick={() => {
+            sound?.play("click");
+            onStart(placements.filter((p): p is ShipPlacement => p !== null));
+          }}
           className="hidden rounded-xl bg-gradient-to-b from-amber-cta to-amber-deep px-4 py-3 font-display text-base font-bold tracking-wide text-navy-950 shadow-glow-amber transition-all duration-200 ease-out hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:bg-none disabled:bg-navy-800 disabled:text-foam-400/40 disabled:shadow-none sm:block"
         >
           {allPlaced ? "Commence battle" : "Deploy all ships to begin"}
@@ -564,9 +583,10 @@ export function PlacementScreen({
         <button
           type="button"
           disabled={!allPlaced}
-          onClick={() =>
-            onStart(placements.filter((p): p is ShipPlacement => p !== null))
-          }
+          onClick={() => {
+            sound?.play("click");
+            onStart(placements.filter((p): p is ShipPlacement => p !== null));
+          }}
           className="flex-[1.4] rounded-xl bg-gradient-to-b from-amber-cta to-amber-deep px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-navy-950 shadow-glow-amber transition-all duration-200 ease-out active:scale-95 disabled:cursor-not-allowed disabled:bg-none disabled:bg-navy-800 disabled:text-foam-400/40 disabled:shadow-none"
         >
           {allPlaced ? "Battle!" : "Deploy all"}

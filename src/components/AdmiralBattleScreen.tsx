@@ -44,7 +44,7 @@ import {
   SunkExplosions,
   WreckSmoke,
 } from "./ShotEffects";
-import { SoundControls } from "./useSound";
+import { SoundControls } from "./useSoundManager";
 
 type EnemyCell =
   | "fog"
@@ -407,6 +407,7 @@ export function AdmiralBattleScreen({
         setTurn("player");
         setAbilityLock(false);
         setBusy(false);
+        sound.play("turn");
       });
     },
     [applyShot, finishGame, game, later, markEnemy, refresh, sound],
@@ -414,11 +415,12 @@ export function AdmiralBattleScreen({
 
   const startAiTurn = useCallback(() => {
     setTurn("enemy");
+    sound.play("turn");
     later(AI_TURN_DELAY, () => {
       const events = ai.takeTurn(game, ENEMY);
       replayAiTurn(events);
     });
-  }, [ai, game, later, replayAiTurn]);
+  }, [ai, game, later, replayAiTurn, sound]);
 
   /** After a player action resolves: continue rapid fire, end, or hand off. */
   const afterPlayerAction = useCallback(
