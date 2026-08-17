@@ -222,21 +222,60 @@ export function deserializeCampaign(raw: string): CampaignState | null {
     }
     const parsed = data as CampaignState;
     if (
-      typeof parsed.level !== "number" ||
+      !Number.isInteger(parsed.level) ||
       parsed.level < 1 ||
       parsed.level > CAMPAIGN_LEVELS ||
       typeof parsed.completed !== "boolean" ||
       typeof parsed.records !== "object" ||
+      parsed.records === null ||
       typeof parsed.upgrades !== "object" ||
-      typeof parsed.unspentUpgradePoints !== "number"
+      parsed.upgrades === null ||
+      !Number.isInteger(parsed.unspentUpgradePoints) ||
+      parsed.unspentUpgradePoints < 0
     ) {
       return null;
     }
     const base = createCampaignState();
+    const upgrades = { ...base.upgrades };
+    for (const shipClass of SHIP_CLASS_IDS) {
+      const tier: unknown = parsed.upgrades[shipClass];
+      if (
+        typeof tier === "number" &&
+        Number.isInteger(tier) &&
+        tier >= 1 &&
+        tier <= MAX_WEAPON_TIER
+      ) {
+        upgrades[shipClass] = tier as WeaponTier;
+      }
+    }
+    const records: Record<number, LevelRecord> = {};
+    for (const [key, value] of Object.entries(parsed.records)) {
+      const level = Number(key);
+      const record = value as Partial<LevelRecord> | null;
+      if (
+        Number.isInteger(level) &&
+        level >= 1 &&
+        level <= CAMPAIGN_LEVELS &&
+        typeof record === "object" &&
+        record !== null &&
+        Number.isInteger(record.wins) &&
+        (record.wins as number) >= 0 &&
+        Number.isInteger(record.losses) &&
+        (record.losses as number) >= 0
+      ) {
+        records[level] = {
+          wins: record.wins as number,
+          losses: record.losses as number,
+        };
+      }
+    }
     return {
-      ...base,
-      ...parsed,
-      upgrades: { ...base.upgrades, ...parsed.upgrades },
+      version: 1,
+      level: parsed.level,
+      completed: parsed.completed,
+      records,
+      upgrades,
+      unspentUpgradePoints: parsed.unspentUpgradePoints,
     };
   } catch {
     return null;

@@ -381,7 +381,10 @@ export function BattleScreen({
         for (const c of cells) {
           const result = enemyBoard.fire(c);
           applyPlayerShot(c, result);
-          fleetSunk = fleetSunk || result.outcome === "fleet-sunk";
+          if (result.outcome === "fleet-sunk") {
+            fleetSunk = true;
+            break;
+          }
         }
         finishPlayerTurn(fleetSunk);
         return;
