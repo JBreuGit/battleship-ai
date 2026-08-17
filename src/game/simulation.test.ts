@@ -42,7 +42,6 @@ describe(`difficulty comparison over ${GAMES_PER_DIFFICULTY} full games each`, (
   const medium = simulate("medium", GAMES_PER_DIFFICULTY);
   const hard = simulate("hard", GAMES_PER_DIFFICULTY);
 
-  // eslint-disable-next-line no-console
   console.log(
     `Simulation vs purely random opponent (${GAMES_PER_DIFFICULTY} games each):\n` +
       [
