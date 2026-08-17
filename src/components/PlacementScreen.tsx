@@ -420,6 +420,90 @@ export function PlacementScreen({
       </BoardShell>
 
       <div className="flex w-full max-w-[26rem] flex-col gap-4 lg:max-w-sm">
+        {!campaign && battleCommander && (
+          <BattleCommanderModeCard
+            level={battleCommander.level}
+            hasSave={battleCommander.hasSave}
+            onLaunch={() => {
+              sound?.play("click");
+              battleCommander.onLaunch();
+            }}
+          />
+        )}
+
+        {!campaign && (
+        <div className="radar-panel animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
+          <h2 className="mb-3 font-display text-base font-bold tracking-wide text-lagoon-300">
+            Single battle game
+          </h2>
+          <div className="flex gap-2">
+            {MODES.map(({ value, label, blurb }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  sound?.play("click");
+                  onModeChange(value);
+                }}
+                className={`flex-1 rounded-xl border px-2 py-2 text-center shadow-btn transition-all duration-200 ease-out active:scale-95 ${
+                  mode === value
+                    ? "border-cyan-cta bg-navy-700 text-cyan-cta shadow-glow-cyan"
+                    : "border-navy-line bg-navy-800 text-foam-400 hover:-translate-y-0.5 hover:border-cyan-cta/50"
+                }`}
+              >
+                <span className="block text-[11px] font-bold uppercase tracking-wider">
+                  {label}
+                </span>
+                <span className="mt-1 block text-[10px] opacity-70">
+                  {blurb}
+                </span>
+              </button>
+            ))}
+          </div>
+          {mode === "admiral" && (
+            <ul className="mt-3 flex flex-col gap-1 text-[10px] text-foam-400">
+              <li>Carrier — recon flight reveals ship cells in a 3×3 area</li>
+              <li>Battleship — one 5-shell barrage cross</li>
+              <li>Cruiser — 5×5 sonar ping counts contacts, but exposes one of your cells</li>
+              <li>Submarine — silently evades the first hit</li>
+              <li>Destroyer — rapid fire: two shots in a turn</li>
+            </ul>
+          )}
+        </div>
+        )}
+
+        {!campaign && (
+        <div className="radar-panel animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
+          <h2 className="mb-3 font-display text-base font-bold tracking-wide text-lagoon-300">
+            Enemy commander
+          </h2>
+          <div className="flex gap-2">
+            {DIFFICULTIES.map(({ value, label, blurb }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  sound?.play("click");
+                  onDifficultyChange(value);
+                }}
+                className={`flex-1 rounded-xl border px-2 py-2 text-center shadow-btn transition-all duration-200 ease-out active:scale-95 ${
+                  difficulty === value
+                    ? "border-cyan-cta bg-navy-700 text-cyan-cta shadow-glow-cyan"
+                    : "border-navy-line bg-navy-800 text-foam-400 hover:-translate-y-0.5 hover:border-cyan-cta/50"
+                }`}
+              >
+                <span className="block text-[11px] font-bold uppercase tracking-wider">
+                  {label}
+                </span>
+                <span className="mt-1 block text-[10px] opacity-70">
+                  {blurb}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+        )}
+
         <div className="animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
           <h2 className="mb-3 font-display text-base font-bold tracking-wide text-lagoon-300">
             Fleet manifest
@@ -515,90 +599,6 @@ export function PlacementScreen({
               then engage Devin AI&apos;s level {campaign.level} tactics.
             </p>
           </div>
-        )}
-
-        {!campaign && (
-        <div className="radar-panel animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
-          <h2 className="mb-3 font-display text-base font-bold tracking-wide text-lagoon-300">
-            Rules of engagement
-          </h2>
-          <div className="flex gap-2">
-            {MODES.map(({ value, label, blurb }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => {
-                  sound?.play("click");
-                  onModeChange(value);
-                }}
-                className={`flex-1 rounded-xl border px-2 py-2 text-center shadow-btn transition-all duration-200 ease-out active:scale-95 ${
-                  mode === value
-                    ? "border-cyan-cta bg-navy-700 text-cyan-cta shadow-glow-cyan"
-                    : "border-navy-line bg-navy-800 text-foam-400 hover:-translate-y-0.5 hover:border-cyan-cta/50"
-                }`}
-              >
-                <span className="block text-[11px] font-bold uppercase tracking-wider">
-                  {label}
-                </span>
-                <span className="mt-1 block text-[10px] opacity-70">
-                  {blurb}
-                </span>
-              </button>
-            ))}
-          </div>
-          {mode === "admiral" && (
-            <ul className="mt-3 flex flex-col gap-1 text-[10px] text-foam-400">
-              <li>Carrier — recon flight reveals ship cells in a 3×3 area</li>
-              <li>Battleship — one 5-shell barrage cross</li>
-              <li>Cruiser — 5×5 sonar ping counts contacts, but exposes one of your cells</li>
-              <li>Submarine — silently evades the first hit</li>
-              <li>Destroyer — rapid fire: two shots in a turn</li>
-            </ul>
-          )}
-        </div>
-        )}
-
-        {!campaign && (
-        <div className="radar-panel animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
-          <h2 className="mb-3 font-display text-base font-bold tracking-wide text-lagoon-300">
-            Enemy commander
-          </h2>
-          <div className="flex gap-2">
-            {DIFFICULTIES.map(({ value, label, blurb }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => {
-                  sound?.play("click");
-                  onDifficultyChange(value);
-                }}
-                className={`flex-1 rounded-xl border px-2 py-2 text-center shadow-btn transition-all duration-200 ease-out active:scale-95 ${
-                  difficulty === value
-                    ? "border-cyan-cta bg-navy-700 text-cyan-cta shadow-glow-cyan"
-                    : "border-navy-line bg-navy-800 text-foam-400 hover:-translate-y-0.5 hover:border-cyan-cta/50"
-                }`}
-              >
-                <span className="block text-[11px] font-bold uppercase tracking-wider">
-                  {label}
-                </span>
-                <span className="mt-1 block text-[10px] opacity-70">
-                  {blurb}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-        )}
-
-        {!campaign && battleCommander && (
-          <BattleCommanderModeCard
-            level={battleCommander.level}
-            hasSave={battleCommander.hasSave}
-            onLaunch={() => {
-              sound?.play("click");
-              battleCommander.onLaunch();
-            }}
-          />
         )}
 
         <button
