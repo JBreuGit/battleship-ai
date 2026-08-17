@@ -255,6 +255,12 @@ export function AdmiralBattleScreen({
             ? "hit"
             : "sunk",
       );
+      if (result.outcome !== "miss") {
+        sound.voice(
+          board === "enemy" ? "navy" : "devin",
+          result.outcome === "hit" ? "hit" : "sunk",
+        );
+      }
       const setGrid = board === "enemy" ? null : setPlayerGrid;
       if (board === "enemy") {
         markEnemy(

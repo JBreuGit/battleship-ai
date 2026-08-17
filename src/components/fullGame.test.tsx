@@ -53,6 +53,7 @@ const silentSound: SoundControls = {
   enabled: false,
   toggle: () => {},
   play: () => {},
+  voice: () => {},
 };
 
 function fireButton(cell: Coordinate): HTMLElement {
