@@ -482,7 +482,11 @@ function cardStatus(player: PlayerId, activePlayer: PlayerId | null): string {
   return player === "dutch" ? "Your turn" : "Devin AI is thinking…";
 }
 
-/** HUD strip: both character cards flanking the status pill (Dutch left, Devin right). */
+/**
+ * HUD strip: both character cards flanking the status pill, each above its
+ * own board — Devin left (over Devin AI waters), Dutch right (over the
+ * Dutch Navy grid); on mobile the cards keep that order above the stack.
+ */
 export function Scoreboard({
   activePlayer,
   dutchSunk,
@@ -494,12 +498,12 @@ export function Scoreboard({
     <div className="flex w-full max-w-4xl flex-wrap items-center justify-center gap-x-3 gap-y-2 sm:justify-between">
       <div className="animate-rise-in">
         <PlayerCharacterCard
-          player="dutch"
-          sunkCount={dutchSunk}
-          active={activePlayer === "dutch"}
-          dimmed={activePlayer === "devin"}
-          status={cardStatus("dutch", activePlayer)}
-          hitFlashSeq={hitFlash?.player === "dutch" ? hitFlash.seq : null}
+          player="devin"
+          sunkCount={devinSunk}
+          active={activePlayer === "devin"}
+          dimmed={activePlayer === "dutch"}
+          status={cardStatus("devin", activePlayer)}
+          hitFlashSeq={hitFlash?.player === "devin" ? hitFlash.seq : null}
         />
       </div>
       <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1">
@@ -517,12 +521,12 @@ export function Scoreboard({
       </div>
       <div className="animate-rise-in [animation-delay:120ms]">
         <PlayerCharacterCard
-          player="devin"
-          sunkCount={devinSunk}
-          active={activePlayer === "devin"}
-          dimmed={activePlayer === "dutch"}
-          status={cardStatus("devin", activePlayer)}
-          hitFlashSeq={hitFlash?.player === "devin" ? hitFlash.seq : null}
+          player="dutch"
+          sunkCount={dutchSunk}
+          active={activePlayer === "dutch"}
+          dimmed={activePlayer === "devin"}
+          status={cardStatus("dutch", activePlayer)}
+          hitFlashSeq={hitFlash?.player === "dutch" ? hitFlash.seq : null}
         />
       </div>
     </div>
