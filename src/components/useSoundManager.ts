@@ -15,10 +15,15 @@ export type SoundName =
   | "turn"
   | "click";
 
+export type VoiceSpeaker = "navy" | "devin";
+export type VoiceEvent = "hit" | "sunk";
+
 export interface SoundControls {
   enabled: boolean;
   toggle: () => void;
   play: (name: SoundName) => void;
+  /** Announcer voice line, layered shortly after the impact SFX. */
+  voice: (speaker: VoiceSpeaker, event: VoiceEvent) => void;
 }
 
 const STORAGE_KEY = "battleship-sound-enabled";
@@ -49,6 +54,41 @@ const SOUNDS: Record<SoundName, SoundSpec> = {
 const FADE_IN = 0.008;
 const FADE_OUT = 0.04;
 
+/** Voice lands just after the explosion so the boom reads first. */
+const VOICE_DELAY_MS = 120;
+const VOICE_GAIN = 0.8;
+
+const NAVY_VOICES: Record<VoiceEvent, string[]> = {
+  hit: [
+    "/sounds/voices/navy-hit-1.mp3",
+    "/sounds/voices/navy-hit-2.mp3",
+    "/sounds/voices/navy-hit-3.mp3",
+  ],
+  sunk: ["/sounds/voices/navy-sunk.mp3"],
+};
+
+const DEVIN_LINES: Record<VoiceEvent, string[]> = {
+  hit: [
+    "Target neutralized.",
+    "Hit confirmed.",
+    "Direct impact registered.",
+    "Calculation successful.",
+  ],
+  sunk: ["Vessel eliminated.", "Enemy asset removed from the board."],
+};
+
+/** Random index, avoiding the previous pick when the pool allows it. */
+function pickIndex(poolSize: number, last: number | undefined): number {
+  if (poolSize <= 1) {
+    return 0;
+  }
+  let index = Math.floor(Math.random() * poolSize);
+  if (index === last) {
+    index = (index + 1 + Math.floor(Math.random() * (poolSize - 1))) % poolSize;
+  }
+  return index;
+}
+
 const listeners = new Set<() => void>();
 
 function subscribe(listener: () => void): () => void {
@@ -71,6 +111,12 @@ class SoundEngine {
   private failed = new Set<SoundName>();
   private lastPlayed = new Map<SoundName, number>();
   private unlocked = false;
+  private voiceBuffers = new Map<string, AudioBuffer>();
+  private voicePending = new Map<string, Promise<void>>();
+  private voiceFailed = new Set<string>();
+  private lastVoiceIndex = new Map<string, number>();
+  private activeVoice: AudioBufferSourceNode | null = null;
+  private voiceTimer: ReturnType<typeof setTimeout> | null = null;
 
   private context(): AudioContext | null {
     if (typeof window === "undefined" || !("AudioContext" in window)) {
@@ -105,6 +151,26 @@ class SoundEngine {
           this.failed.add(name);
         });
       this.pending.set(name, load);
+    }
+    for (const src of [...NAVY_VOICES.hit, ...NAVY_VOICES.sunk]) {
+      if (
+        this.voiceBuffers.has(src) ||
+        this.voicePending.has(src) ||
+        this.voiceFailed.has(src)
+      ) {
+        continue;
+      }
+      const load = fetch(src)
+        .then((res) => res.arrayBuffer())
+        .then((data) => ctx.decodeAudioData(data))
+        .then((buffer) => {
+          this.voiceBuffers.set(src, buffer);
+        })
+        .catch(() => {
+          this.voicePending.delete(src);
+          this.voiceFailed.add(src);
+        });
+      this.voicePending.set(src, load);
     }
   }
 
@@ -168,6 +234,135 @@ class SoundEngine {
       gain.disconnect();
     };
   }
+
+  /** Cut whatever line is talking so rapid hits never overlap voices. */
+  private stopVoice(): void {
+    if (this.voiceTimer !== null) {
+      clearTimeout(this.voiceTimer);
+      this.voiceTimer = null;
+    }
+    if (this.activeVoice) {
+      try {
+        this.activeVoice.stop();
+      } catch {
+        // Already stopped.
+      }
+      this.activeVoice = null;
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  }
+
+  voice(speaker: VoiceSpeaker, event: VoiceEvent): void {
+    const ctx = this.context();
+    if (!ctx || !isSoundEnabled() || !this.unlocked) {
+      return;
+    }
+    this.stopVoice();
+    this.voiceTimer = setTimeout(() => {
+      this.voiceTimer = null;
+      if (!isSoundEnabled()) {
+        return;
+      }
+      if (speaker === "navy") {
+        this.playNavyVoice(ctx, event);
+      } else {
+        this.playDevinVoice(ctx, event);
+      }
+    }, VOICE_DELAY_MS);
+  }
+
+  private playNavyVoice(ctx: AudioContext, event: VoiceEvent): void {
+    const pool = NAVY_VOICES[event];
+    const key = `navy-${event}`;
+    const index = pickIndex(pool.length, this.lastVoiceIndex.get(key));
+    this.lastVoiceIndex.set(key, index);
+    const buffer = this.voiceBuffers.get(pool[index]);
+    if (!buffer) {
+      this.preload();
+      return;
+    }
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const gain = ctx.createGain();
+    const level = VOICE_GAIN * (0.9 + Math.random() * 0.1);
+    const start = ctx.currentTime;
+    const end = start + buffer.duration;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(level, start + FADE_IN);
+    gain.gain.setValueAtTime(level, Math.max(start + FADE_IN, end - FADE_OUT));
+    gain.gain.linearRampToValueAtTime(0, end);
+    source.connect(gain).connect(ctx.destination);
+    source.start(start);
+    this.activeVoice = source;
+    source.onended = () => {
+      if (this.activeVoice === source) {
+        this.activeVoice = null;
+      }
+      source.disconnect();
+      gain.disconnect();
+    };
+  }
+
+  /**
+   * Devin's lines come from the browser's SpeechSynthesis, pitched down for
+   * a machine cadence. SpeechSynthesis output can't be routed through Web
+   * Audio, so the synthetic character comes from a ring-modulated hum
+   * layered underneath the speech for its estimated duration.
+   */
+  private playDevinVoice(ctx: AudioContext, event: VoiceEvent): void {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return;
+    }
+    const pool = DEVIN_LINES[event];
+    const key = `devin-${event}`;
+    const index = pickIndex(pool.length, this.lastVoiceIndex.get(key));
+    this.lastVoiceIndex.set(key, index);
+    const line = pool[index];
+
+    const utterance = new SpeechSynthesisUtterance(line);
+    utterance.pitch = 0.5;
+    utterance.rate = 1.05;
+    utterance.volume = Math.min(1, VOICE_GAIN * (0.9 + Math.random() * 0.1));
+    window.speechSynthesis.speak(utterance);
+
+    // Ring-modulated carrier under the speech makes it read as machine-born.
+    const durationSec = Math.min(2.5, 0.35 + line.length * 0.055);
+    const carrier = ctx.createOscillator();
+    carrier.type = "sawtooth";
+    carrier.frequency.value = 92;
+    const modulator = ctx.createOscillator();
+    modulator.type = "sine";
+    modulator.frequency.value = 27;
+    const modDepth = ctx.createGain();
+    modDepth.gain.value = 0.5;
+    const ring = ctx.createGain();
+    ring.gain.value = 0.5;
+    modulator.connect(modDepth).connect(ring.gain);
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 900;
+    const out = ctx.createGain();
+    const start = ctx.currentTime;
+    const end = start + durationSec;
+    out.gain.setValueAtTime(0, start);
+    out.gain.linearRampToValueAtTime(0.045, start + 0.06);
+    out.gain.setValueAtTime(0.045, end - 0.15);
+    out.gain.linearRampToValueAtTime(0, end);
+    carrier.connect(ring).connect(filter).connect(out).connect(ctx.destination);
+    carrier.start(start);
+    modulator.start(start);
+    carrier.stop(end);
+    modulator.stop(end);
+    carrier.onended = () => {
+      carrier.disconnect();
+      modulator.disconnect();
+      ring.disconnect();
+      filter.disconnect();
+      out.disconnect();
+    };
+  }
 }
 
 const engine = new SoundEngine();
@@ -200,5 +395,9 @@ export function useSoundManager(): SoundControls {
     engine.play(name);
   }, []);
 
-  return { enabled, toggle, play };
+  const voice = useCallback((speaker: VoiceSpeaker, event: VoiceEvent) => {
+    engine.voice(speaker, event);
+  }, []);
+
+  return { enabled, toggle, play, voice };
 }

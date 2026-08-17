@@ -188,7 +188,12 @@ export function BattleScreen({
       seq: seqRef.current,
     });
     sound.play("fire");
-    later(260, () => sound.play(soundFor(result.outcome)));
+    later(260, () => {
+      sound.play(soundFor(result.outcome));
+      if (result.outcome !== "miss") {
+        sound.voice("devin", result.outcome === "hit" ? "hit" : "sunk");
+      }
+    });
     if (result.outcome === "hit") {
       setShake({ board: "player", kind: "hit", seq: seqRef.current });
     }
@@ -256,7 +261,12 @@ export function BattleScreen({
         seq: seqRef.current,
       });
       sound.play("fire");
-      later(260, () => sound.play(soundFor(result.outcome)));
+      later(260, () => {
+        sound.play(soundFor(result.outcome));
+        if (result.outcome !== "miss") {
+          sound.voice("navy", result.outcome === "hit" ? "hit" : "sunk");
+        }
+      });
       if (result.outcome === "hit") {
         setShake({ board: "enemy", kind: "hit", seq: seqRef.current });
       }
