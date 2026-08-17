@@ -15,6 +15,8 @@ export interface BoardShellProps {
   subtitle?: string;
   tone: "navy" | "paper";
   shaking?: boolean;
+  /** Stagger the entrance animation (ms). */
+  entranceDelayMs?: number;
   children: ReactNode;
 }
 
@@ -24,12 +26,16 @@ export function BoardShell({
   subtitle,
   tone,
   shaking,
+  entranceDelayMs,
   children,
 }: BoardShellProps) {
   const enemy = tone === "navy";
 
   return (
-    <section className="animate-rise-in flex w-full max-w-[26rem] flex-col gap-2 lg:max-w-[30rem]">
+    <section
+      className="animate-rise-in flex w-full max-w-[26rem] flex-col gap-2 lg:max-w-[30rem]"
+      style={entranceDelayMs ? { animationDelay: `${entranceDelayMs}ms` } : undefined}
+    >
       <header className="flex items-center justify-between px-2">
         <h2
           className={`flex items-center gap-2 font-display text-base font-bold tracking-wide ${

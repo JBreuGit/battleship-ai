@@ -602,6 +602,18 @@ body {
   }
 }
 
+@keyframes handoff-pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.13);
+  }
+  100% {
+    transform: scale(1.05);
+  }
+}
+
 @keyframes radar-sweep {
   from {
     transform: rotate(0deg);
@@ -782,6 +794,11 @@ body {
   animation: glow-pulse-amber 2s ease-in-out infinite;
 }
 
+.animate-handoff-pop {
+  animation: handoff-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  will-change: transform;
+}
+
 .fog-haze {
   background-image:
     radial-gradient(ellipse 60% 45% at 25% 30%, rgba(148, 163, 184, 0.09), transparent 70%),
@@ -805,8 +822,15 @@ body {
   .animate-pulse-soft,
   .animate-speck-drift,
   .animate-glow-pulse-amber,
+  .animate-handoff-pop,
+  .animate-board-shake,
+  .animate-board-shake-soft,
   .fog-haze {
     animation: none;
+  }
+
+  .animate-wreck-settle {
+    animation-duration: 0.01ms;
   }
 
   .radar-panel::after {

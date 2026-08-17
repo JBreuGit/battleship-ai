@@ -330,6 +330,7 @@ export function BattleScreen({
           title={`${PLAYERS.devin.name} waters`}
           subtitle={`${difficulty} AI · your shots: ${playerShots}`}
           tone="navy"
+          entranceDelayMs={80}
         >
           <div className="relative">
           <div
@@ -405,7 +406,7 @@ export function BattleScreen({
           </div>
         </BoardShell>
 
-        <div className="flex flex-row gap-4 lg:flex-col lg:pt-10">
+        <div className="animate-rise-in flex flex-row gap-4 [animation-delay:200ms] lg:flex-col lg:pt-10">
           <FleetStatus
             label={`${PLAYERS.devin.name} fleet`}
             sunk={enemySunk}
@@ -418,6 +419,7 @@ export function BattleScreen({
           title={`${PLAYERS.dutch.name} grid`}
           subtitle={`enemy shots: ${enemyShots}`}
           tone="paper"
+          entranceDelayMs={320}
         >
           <div className="relative">
           <div
