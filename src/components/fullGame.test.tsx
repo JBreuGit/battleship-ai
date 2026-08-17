@@ -7,7 +7,7 @@ import { createRng } from "@/game/rng";
 import { Coordinate, FireResult, ShipPlacement } from "@/game/types";
 import { AdmiralBattleScreen, AdmiralSession } from "./AdmiralBattleScreen";
 import { BattleScreen, FleetStatus, Session } from "./BattleScreen";
-import { SoundControls } from "./useSound";
+import { SoundControls } from "./useSoundManager";
 
 /** A legal fleet: rows 0/2/4/6/8, bows at the left edge. */
 function testFleet(): ShipPlacement[] {

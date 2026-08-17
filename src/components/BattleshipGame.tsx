@@ -11,7 +11,7 @@ import { BattleScreen, Session, createSession } from "./BattleScreen";
 import { BridgeHeader, CoordinateReadout } from "./BridgeHeader";
 import { GameMode, PlacementScreen } from "./PlacementScreen";
 import { AmbientParticles, SplashScreen } from "./SplashScreen";
-import { useSound } from "./useSound";
+import { useSoundManager } from "./useSoundManager";
 
 export default function BattleshipGame() {
   const [deployed, setDeployed] = useState(false);
@@ -32,7 +32,7 @@ export default function BattleshipGame() {
 }
 
 function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
-  const sound = useSound();
+  const sound = useSoundManager();
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [mode, setMode] = useState<GameMode>("classic");
   const [session, setSession] = useState<Session | AdmiralSession | null>(
@@ -47,7 +47,12 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
       <BridgeHeader>
         <button
           type="button"
-          onClick={sound.toggle}
+          onClick={() => {
+            sound.toggle();
+            if (!sound.enabled) {
+              sound.play("click");
+            }
+          }}
           aria-pressed={sound.enabled}
           aria-label={`Sound ${sound.enabled ? "on" : "off"}`}
           title={`Sound ${sound.enabled ? "on" : "off"}`}
@@ -80,6 +85,7 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
           )
         ) : (
           <PlacementScreen
+            sound={sound}
             difficulty={difficulty}
             onDifficultyChange={setDifficulty}
             mode={mode}

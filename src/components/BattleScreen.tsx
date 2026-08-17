@@ -33,7 +33,7 @@ import {
   SunkExplosions,
   WreckSmoke,
 } from "./ShotEffects";
-import { SoundControls } from "./useSound";
+import { SoundControls } from "./useSoundManager";
 
 type EnemyCell = "fog" | "miss" | "hit" | "sunk";
 export type PlayerCell = "water" | "ship" | "miss" | "hit" | "sunk";
@@ -218,6 +218,7 @@ export function BattleScreen({
     later(600, () => {
       setTurn("player");
       setBusy(false);
+      sound.play("turn");
     });
   }, [later, session, sound, soundFor]);
 
@@ -284,7 +285,10 @@ export function BattleScreen({
         return;
       }
       setBusy(true);
-      later(AI_TURN_DELAY / 2, () => setTurn("enemy"));
+      later(AI_TURN_DELAY / 2, () => {
+        setTurn("enemy");
+        sound.play("turn");
+      });
       later(AI_TURN_DELAY, aiTurn);
     },
     [aiTurn, busy, later, session, sound, soundFor, turn, winner],
