@@ -381,6 +381,10 @@ export function AdmiralBattleScreen({
           }
           return next;
         });
+        if (board === "player") {
+          // A sunk ship loses its armed heavy shell.
+          setHeavyArmed((prev) => (prev === shipId ? null : prev));
+        }
         if (result.sunkShip) {
           const placement = placementFromCells(result.sunkShip);
           setWrecks((prev) => [...prev, { shipId, placement }]);
@@ -666,6 +670,9 @@ export function AdmiralBattleScreen({
       if (busy || winner || turn !== "player" || abilityLock || arming) {
         return;
       }
+      if (heavyArmed !== null && tier !== 3) {
+        return;
+      }
       if (tier === 2) {
         // Rapid-fire cannon: two shots this turn, no ability use spent.
         game.boostShots(PLAYER, 2);
@@ -690,6 +697,7 @@ export function AdmiralBattleScreen({
       busy,
       game,
       handleGuidedShot,
+      heavyArmed,
       refresh,
       sound,
       turn,
@@ -734,6 +742,7 @@ export function AdmiralBattleScreen({
         busy ||
         winner ||
         abilityLock ||
+        heavyArmed !== null ||
         turn !== "player" ||
         !game.abilityAvailable(PLAYER, kind)
       ) {
@@ -756,7 +765,7 @@ export function AdmiralBattleScreen({
             : "Sonar armed — pick the center of the 5×5 ping.",
       );
     },
-    [abilityLock, busy, game, refresh, turn, winner],
+    [abilityLock, busy, game, heavyArmed, refresh, turn, winner],
   );
 
   const previewCells = new Set<string>(
@@ -814,7 +823,13 @@ export function AdmiralBattleScreen({
       <AbilityBar
         game={game}
         arming={arming}
-        disabled={busy || !!winner || abilityLock || turn !== "player"}
+        disabled={
+          busy ||
+          !!winner ||
+          abilityLock ||
+          heavyArmed !== null ||
+          turn !== "player"
+        }
         onUse={handleAbilityButton}
         campaignLevel={campaign?.level}
       />
@@ -838,6 +853,7 @@ export function AdmiralBattleScreen({
               !!winner ||
               abilityLock ||
               arming !== null ||
+              (heavyArmed !== null && heavyArmed !== shipClass) ||
               turn !== "player";
             const armed = heavyArmed === shipClass;
             return (
