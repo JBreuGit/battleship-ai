@@ -98,8 +98,8 @@ export function GameOverModal({
         </p>
         <p className="mt-2 text-sm text-foam-300">
           {won
-            ? `${PLAYERS.dutch.name} wins — the ${PLAYERS.devin.name} fleet is destroyed.`
-            : `${PLAYERS.devin.name} wins — your fleet has been destroyed.`}
+            ? `${CALLSIGNS.dutch} wins — the ${PLAYERS.devin.name} fleet is destroyed.`
+            : `${PLAYERS.devin.name} wins — ${CALLSIGNS.dutch}'s fleet has been destroyed.`}
         </p>
         <dl className="mt-6 grid grid-cols-2 gap-3">
           <div className="rounded-xl border border-navy-line bg-navy-800 p-3">

@@ -394,7 +394,11 @@ export interface PlayerCharacterCardProps {
   hitFlashSeq?: number | null;
 }
 
-/** Large framed character card: portrait bust, name, callsign, fleet pips. */
+/**
+ * Large framed character card: portrait bust, name, callsign, fleet pips.
+ * The Dutch card leads with the commander's name (Adm. W. van Oranje) and
+ * shows the faction beneath; the Devin card leads with the faction name.
+ */
 export function PlayerCharacterCard({
   player,
   sunkCount,
@@ -436,10 +440,10 @@ export function PlayerCharacterCard({
       <p
         className={`mt-2 font-display text-sm font-extrabold leading-tight tracking-wide lg:text-lg ${theme.text}`}
       >
-        {theme.name}
+        {dutch ? CALLSIGNS.dutch : theme.name}
       </p>
       <p className="font-mono text-[9px] uppercase tracking-wider text-foam-400 lg:text-[10px]">
-        {CALLSIGNS[player]}
+        {dutch ? theme.name : CALLSIGNS.devin}
       </p>
       <div className="mt-1">
         <ShipPips player={player} sunkCount={sunkCount} />
