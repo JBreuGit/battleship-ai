@@ -70,8 +70,18 @@ export function GameOverModal({
             : "border-devin-400/40 bg-navy-900 shadow-glow-devin"
         }`}
       >
-        <div className="flex flex-col items-center gap-1.5">
-          <PlayerAvatarBadge player={won ? "dutch" : "devin"} size="xl" active />
+        <div className="flex flex-col items-center gap-2">
+          <div className="animate-winner-pop">
+            <div
+              className={`rounded-full ${
+                won
+                  ? "animate-glow-pulse-dutch-strong"
+                  : "animate-glow-pulse-devin-strong"
+              }`}
+            >
+              <PlayerAvatarBadge player={won ? "dutch" : "devin"} size="hero" />
+            </div>
+          </div>
           <p className="font-mono text-[10px] uppercase tracking-widest text-foam-400">
             {CALLSIGNS[won ? "dutch" : "devin"]}
           </p>

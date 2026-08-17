@@ -297,6 +297,7 @@ const BADGE_SIZES = {
   md: "h-11 w-11",
   lg: "h-20 w-20",
   xl: "h-24 w-24 sm:h-28 sm:w-28",
+  hero: "h-36 w-36 sm:h-44 sm:w-44",
 } as const;
 
 export interface PlayerAvatarBadgeProps {
@@ -379,16 +380,83 @@ export const CALLSIGNS: Record<PlayerId, string> = {
   devin: "Op. D3V-1N",
 };
 
-export interface TeamPanelProps {
+export interface PlayerCharacterCardProps {
   player: PlayerId;
   /** Ships destroyed in this player's fleet. */
   sunkCount: number;
-  /** Glow + pulse when it is this player's turn. */
+  /** Strong glow + scale-up when it is this player's turn. */
   active?: boolean;
-  /** Fade back while the other side holds the turn. */
+  /** Scale back and fade while the other side holds the turn. */
   dimmed?: boolean;
-  /** Mirror the layout (avatar on the right). */
-  reverse?: boolean;
+  /** Turn-state label shown under the portrait. */
+  status: string;
+  /** Bump to fire a quick glow burst (this player just landed a hit). */
+  hitFlashSeq?: number | null;
+}
+
+/** Large framed character card: portrait bust, name, callsign, fleet pips. */
+export function PlayerCharacterCard({
+  player,
+  sunkCount,
+  active,
+  dimmed,
+  status,
+  hitFlashSeq,
+}: PlayerCharacterCardProps) {
+  const theme = PLAYERS[player];
+  const dutch = player === "dutch";
+  return (
+    <div
+      className={`relative flex w-[10.25rem] flex-col items-center rounded-2xl border-2 bg-navy-900/85 px-3 pb-2.5 pt-3 transition-all duration-500 ease-out will-change-transform sm:w-48 lg:w-56 ${
+        active
+          ? `scale-[1.07] ${
+              dutch
+                ? "animate-glow-pulse-dutch-strong border-dutch-500/80"
+                : "animate-glow-pulse-devin-strong border-devin-400/80"
+            }`
+          : "border-navy-line"
+      } ${dimmed ? "scale-[0.94] opacity-70 saturate-[0.75]" : ""}`}
+    >
+      {hitFlashSeq != null && (
+        <span
+          key={hitFlashSeq}
+          aria-hidden
+          className={`pointer-events-none absolute -inset-0.5 rounded-2xl ${
+            dutch ? "card-hit-flash-dutch" : "card-hit-flash-devin"
+          }`}
+        />
+      )}
+      <div
+        className={`h-20 w-20 overflow-hidden rounded-xl border-2 sm:h-24 sm:w-24 lg:h-36 lg:w-36 ${
+          dutch ? "border-dutch-500/70" : "border-devin-400/70"
+        }`}
+      >
+        <AvatarPortrait player={player} />
+      </div>
+      <p
+        className={`mt-2 font-display text-sm font-extrabold leading-tight tracking-wide lg:text-lg ${theme.text}`}
+      >
+        {theme.name}
+      </p>
+      <p className="font-mono text-[9px] uppercase tracking-wider text-foam-400 lg:text-[10px]">
+        {CALLSIGNS[player]}
+      </p>
+      <div className="mt-1">
+        <ShipPips player={player} sunkCount={sunkCount} />
+      </div>
+      <p
+        className={`mt-1.5 rounded-full border px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider transition-colors duration-300 lg:text-[10px] ${
+          active
+            ? dutch
+              ? "border-dutch-500/50 text-dutch-400"
+              : "border-devin-400/50 text-devin-400"
+            : "border-navy-line text-foam-400"
+        }`}
+      >
+        {status}
+      </p>
+    </div>
+  );
 }
 
 export interface ScoreboardProps {
@@ -400,23 +468,38 @@ export interface ScoreboardProps {
   devinSunk: number;
   /** Center status message. */
   message: string;
+  /** Latest landed hit, to flash the attacker's card. */
+  hitFlash?: { player: PlayerId; seq: number } | null;
 }
 
-/** HUD strip: both team ID cards flanking the status pill (Dutch left, Devin right). */
+function cardStatus(player: PlayerId, activePlayer: PlayerId | null): string {
+  if (activePlayer === null) {
+    return "Cease fire";
+  }
+  if (activePlayer !== player) {
+    return "Standing by";
+  }
+  return player === "dutch" ? "Your turn" : "Devin AI is thinking…";
+}
+
+/** HUD strip: both character cards flanking the status pill (Dutch left, Devin right). */
 export function Scoreboard({
   activePlayer,
   dutchSunk,
   devinSunk,
   message,
+  hitFlash,
 }: ScoreboardProps) {
   return (
-    <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-4 gap-y-2 sm:justify-between">
+    <div className="flex w-full max-w-4xl flex-wrap items-center justify-center gap-x-3 gap-y-2 sm:justify-between">
       <div className="animate-rise-in">
-        <TeamPanel
+        <PlayerCharacterCard
           player="dutch"
           sunkCount={dutchSunk}
           active={activePlayer === "dutch"}
           dimmed={activePlayer === "devin"}
+          status={cardStatus("dutch", activePlayer)}
+          hitFlashSeq={hitFlash?.player === "dutch" ? hitFlash.seq : null}
         />
       </div>
       <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1">
@@ -433,55 +516,14 @@ export function Scoreboard({
         </p>
       </div>
       <div className="animate-rise-in [animation-delay:120ms]">
-        <TeamPanel
+        <PlayerCharacterCard
           player="devin"
           sunkCount={devinSunk}
           active={activePlayer === "devin"}
           dimmed={activePlayer === "dutch"}
-          reverse
+          status={cardStatus("devin", activePlayer)}
+          hitFlashSeq={hitFlash?.player === "devin" ? hitFlash.seq : null}
         />
-      </div>
-    </div>
-  );
-}
-
-/** ID-card style team panel: portrait badge clipped to the HUD like a pass. */
-export function TeamPanel({
-  player,
-  sunkCount,
-  active,
-  dimmed,
-  reverse,
-}: TeamPanelProps) {
-  const theme = PLAYERS[player];
-  return (
-    <div
-      className={`relative flex items-center gap-2.5 rounded-xl border bg-navy-900/75 py-1.5 pl-2 pr-3 transition-all duration-300 ${
-        reverse ? "flex-row-reverse pl-3 pr-2" : ""
-      } ${
-        active
-          ? player === "dutch"
-            ? "animate-glow-pulse-dutch border-dutch-500/60"
-            : "animate-glow-pulse-devin border-devin-400/60"
-          : "border-navy-line"
-      } ${dimmed ? "opacity-70 saturate-[0.75]" : ""}`}
-    >
-      {/* card clip */}
-      <span
-        aria-hidden
-        className="absolute -top-[5px] left-1/2 h-[7px] w-7 -translate-x-1/2 rounded-[3px] border border-navy-line bg-gradient-to-b from-slate-500 to-slate-700"
-      />
-      <PlayerAvatarBadge player={player} active={active} />
-      <div className={reverse ? "text-right" : ""}>
-        <p className={`text-xs font-bold leading-tight ${theme.text}`}>
-          {theme.name}
-        </p>
-        <p className="font-mono text-[9px] uppercase tracking-wider text-foam-400">
-          {CALLSIGNS[player]}
-        </p>
-        <div className={`mt-0.5 flex ${reverse ? "justify-end" : ""}`}>
-          <ShipPips player={player} sunkCount={sunkCount} />
-        </div>
       </div>
     </div>
   );
