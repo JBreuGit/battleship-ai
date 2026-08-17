@@ -18,6 +18,7 @@ import {
   Orientation,
   ShipPlacement,
 } from "@/game/types";
+import { BattleCommanderModeCard } from "./BattleCommanderModeCard";
 import { BoardShell } from "./BoardShell";
 import { ShipId, ShipOverlay, ShipSprite } from "./ShipSprite";
 import { SoundControls } from "./useSoundManager";
@@ -74,6 +75,12 @@ function othersOf(
   );
 }
 
+/** Campaign context: placement for a Battle Commander engagement. */
+export interface CampaignPlacementInfo {
+  level: number;
+  rankTitle: string;
+}
+
 export interface PlacementScreenProps {
   difficulty: Difficulty;
   onDifficultyChange: (difficulty: Difficulty) => void;
@@ -81,6 +88,15 @@ export interface PlacementScreenProps {
   onModeChange: (mode: GameMode) => void;
   onStart: (fleet: ShipPlacement[]) => void;
   sound?: SoundControls;
+  /** When set, shows the Battle Commander campaign card on mode selection. */
+  battleCommander?: {
+    level: number;
+    hasSave: boolean;
+    onLaunch: () => void;
+  };
+  /** When set, this placement is for a campaign engagement: the mode and
+   * difficulty panels are replaced by an engagement briefing. */
+  campaign?: CampaignPlacementInfo;
 }
 
 export function PlacementScreen({
@@ -90,6 +106,8 @@ export function PlacementScreen({
   onModeChange,
   onStart,
   sound,
+  battleCommander,
+  campaign,
 }: PlacementScreenProps) {
   const [placements, setPlacements] = useState<(ShipPlacement | null)[]>(() =>
     Array.from(FLEET_LENGTHS, () => null),
@@ -482,6 +500,19 @@ export function PlacementScreen({
           </p>
         </div>
 
+        {campaign && (
+          <div className="radar-panel animate-rise-in rounded-2xl border border-amber-cta/50 bg-navy-900/85 p-4 shadow-panel">
+            <h2 className="font-display text-base font-bold tracking-wide text-amber-cta">
+              Engagement {campaign.level} of 20
+            </h2>
+            <p className="mt-1 text-xs text-foam-300">
+              {campaign.rankTitle} — deploy your fleet, then engage Devin
+              AI&apos;s level {campaign.level} tactics.
+            </p>
+          </div>
+        )}
+
+        {!campaign && (
         <div className="radar-panel animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
           <h2 className="mb-3 font-display text-base font-bold tracking-wide text-lagoon-300">
             Rules of engagement
@@ -520,7 +551,9 @@ export function PlacementScreen({
             </ul>
           )}
         </div>
+        )}
 
+        {!campaign && (
         <div className="radar-panel animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-4 shadow-panel">
           <h2 className="mb-3 font-display text-base font-bold tracking-wide text-lagoon-300">
             Enemy commander
@@ -550,6 +583,18 @@ export function PlacementScreen({
             ))}
           </div>
         </div>
+        )}
+
+        {!campaign && battleCommander && (
+          <BattleCommanderModeCard
+            level={battleCommander.level}
+            hasSave={battleCommander.hasSave}
+            onLaunch={() => {
+              sound?.play("click");
+              battleCommander.onLaunch();
+            }}
+          />
+        )}
 
         <button
           type="button"

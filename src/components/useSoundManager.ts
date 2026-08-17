@@ -18,10 +18,21 @@ export type SoundName =
 export type VoiceSpeaker = "navy" | "devin";
 export type VoiceEvent = "hit" | "sunk";
 
+/**
+ * Per-play variation of a base sound, used for weapon-tier variants:
+ * lower `rate` reads as a heavier gun, `gainMul` scales the mix level,
+ * and `layers` re-fires the buffer with a short mechanical echo delay.
+ */
+export interface PlayVariant {
+  rate?: number;
+  gainMul?: number;
+  layers?: number;
+}
+
 export interface SoundControls {
   enabled: boolean;
   toggle: () => void;
-  play: (name: SoundName) => void;
+  play: (name: SoundName, variant?: PlayVariant) => void;
   /** Announcer voice line, layered shortly after the impact SFX. */
   voice: (speaker: VoiceSpeaker, event: VoiceEvent) => void;
 }
@@ -212,7 +223,7 @@ class SoundEngine {
     }
   }
 
-  play(name: SoundName): void {
+  play(name: SoundName, variant?: PlayVariant): void {
     const ctx = this.context();
     if (!ctx || !isSoundEnabled()) {
       return;
@@ -236,13 +247,33 @@ class SoundEngine {
     }
     this.lastPlayed.set(name, now);
 
+    const layers = Math.max(1, variant?.layers ?? 1);
+    for (let layer = 0; layer < layers; layer++) {
+      this.playBuffer(ctx, buffer, spec.gain, {
+        rate: variant?.rate ?? 1,
+        gainMul: (variant?.gainMul ?? 1) * (layer === 0 ? 1 : 0.45),
+        delaySec: layer * 0.09,
+      });
+    }
+  }
+
+  private playBuffer(
+    ctx: AudioContext,
+    buffer: AudioBuffer,
+    baseGain: number,
+    opts: { rate: number; gainMul: number; delaySec: number },
+  ): void {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
+    source.playbackRate.value = opts.rate;
     const gain = ctx.createGain();
     // Slight random level variation keeps repeated shots from sounding canned.
-    const level = spec.gain * (0.9 + Math.random() * 0.1);
-    const start = ctx.currentTime;
-    const end = start + buffer.duration;
+    const level = Math.min(
+      1.2,
+      baseGain * opts.gainMul * (0.9 + Math.random() * 0.1),
+    );
+    const start = ctx.currentTime + opts.delaySec;
+    const end = start + buffer.duration / opts.rate;
     gain.gain.setValueAtTime(0, start);
     gain.gain.linearRampToValueAtTime(level, start + FADE_IN);
     gain.gain.setValueAtTime(level, Math.max(start + FADE_IN, end - FADE_OUT));
@@ -416,8 +447,8 @@ export function useSoundManager(): SoundControls {
     listeners.forEach((listener) => listener());
   }, []);
 
-  const play = useCallback((name: SoundName) => {
-    engine.play(name);
+  const play = useCallback((name: SoundName, variant?: PlayVariant) => {
+    engine.play(name, variant);
   }, []);
 
   const voice = useCallback((speaker: VoiceSpeaker, event: VoiceEvent) => {

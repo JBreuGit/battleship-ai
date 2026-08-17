@@ -929,3 +929,39 @@ body {
     opacity: 0;
   }
 }
+
+@keyframes insignia-pin {
+  0% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(0.94);
+  }
+  75% {
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-insignia-pin {
+  animation: insignia-pin 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
+}
+
+@keyframes tier-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-tier-glow {
+  animation: tier-glow 2.4s ease-in-out infinite;
+}
