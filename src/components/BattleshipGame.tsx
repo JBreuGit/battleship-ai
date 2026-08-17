@@ -3,13 +3,32 @@
 import { useState } from "react";
 import { Difficulty } from "@/game/ai";
 import {
+  CampaignState,
+  RankInfo,
+  ShipClassId,
+  applyUpgrade,
+  loadCampaign,
+  rankForLevel,
+  recordLoss,
+  recordWin,
+  resetCampaign,
+  saveCampaign,
+} from "@/game/campaign";
+import {
   AdmiralBattleScreen,
   AdmiralSession,
   createAdmiralSession,
 } from "./AdmiralBattleScreen";
-import { BattleScreen, Session, createSession } from "./BattleScreen";
+import {
+  BattleScreen,
+  Session,
+  createCampaignSession,
+  createSession,
+} from "./BattleScreen";
+import { ArmoryScreen } from "./ArmoryScreen";
 import { BridgeHeader, CoordinateReadout } from "./BridgeHeader";
 import { GameMode, PlacementScreen } from "./PlacementScreen";
+import { PromotionModal } from "./PromotionModal";
 import { AmbientParticles, SplashScreen } from "./SplashScreen";
 import { useSoundManager } from "./useSoundManager";
 
@@ -31,6 +50,12 @@ export default function BattleshipGame() {
   return <GameRound key={round} onPlayAgain={() => setRound((r) => r + 1)} />;
 }
 
+/** Where the Battle Commander campaign currently is in its loop. */
+type CampaignPhase =
+  | { screen: "armory" }
+  | { screen: "placement" }
+  | { screen: "battle"; session: Session };
+
 function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
   const sound = useSoundManager();
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
@@ -38,6 +63,75 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
   const [session, setSession] = useState<Session | AdmiralSession | null>(
     null,
   );
+  const [campaign, setCampaign] = useState<CampaignState | null>(null);
+  const [campaignPhase, setCampaignPhase] = useState<CampaignPhase>({
+    screen: "armory",
+  });
+  const [promotion, setPromotion] = useState<RankInfo | null>(null);
+  // Peek at the save so the mode card can offer "Continue Campaign".
+  const [savedCampaign] = useState<CampaignState>(() => loadCampaign());
+
+  const updateCampaign = (next: CampaignState) => {
+    saveCampaign(next);
+    setCampaign(next);
+  };
+
+  const handleCampaignResult = (state: CampaignState) => (won: boolean) => {
+    if (won) {
+      const outcome = recordWin(state);
+      updateCampaign(outcome.state);
+      if (outcome.promotedTo) {
+        setPromotion(outcome.promotedTo);
+      }
+    } else {
+      updateCampaign(recordLoss(state));
+    }
+  };
+
+  const campaignView =
+    campaign === null ? null : campaignPhase.screen === "armory" ? (
+      <ArmoryScreen
+        campaign={campaign}
+        sound={sound}
+        onUpgrade={(shipClass: ShipClassId) =>
+          updateCampaign(applyUpgrade(campaign, shipClass))
+        }
+        onStartLevel={() => setCampaignPhase({ screen: "placement" })}
+        onExit={() => setCampaign(null)}
+        onReset={() => setCampaign(resetCampaign())}
+      />
+    ) : campaignPhase.screen === "placement" ? (
+      <PlacementScreen
+        sound={sound}
+        difficulty={difficulty}
+        onDifficultyChange={setDifficulty}
+        mode="classic"
+        onModeChange={() => {}}
+        campaign={{
+          level: campaign.level,
+          rankTitle: rankForLevel(campaign.level).title,
+        }}
+        onStart={(fleet) =>
+          setCampaignPhase({
+            screen: "battle",
+            session: createCampaignSession(fleet, campaign.level),
+          })
+        }
+      />
+    ) : (
+      <BattleScreen
+        session={campaignPhase.session}
+        difficulty="hard"
+        sound={sound}
+        onPlayAgain={() => setCampaignPhase({ screen: "armory" })}
+        playAgainLabel="Return to Fleet Command"
+        campaign={{
+          level: campaign.level,
+          upgrades: campaign.upgrades,
+          onResult: handleCampaignResult(campaign),
+        }}
+      />
+    );
 
   return (
     <div className="relative flex min-h-screen w-full flex-1 flex-col">
@@ -67,7 +161,22 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
       </BridgeHeader>
 
       <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6">
-        {session ? (
+        {campaignView ? (
+          <>
+            {campaignView}
+            {promotion && campaign && (
+              <PromotionModal
+                rank={promotion}
+                level={campaign.level}
+                sound={sound}
+                onContinue={() => {
+                  setPromotion(null);
+                  setCampaignPhase({ screen: "armory" });
+                }}
+              />
+            )}
+          </>
+        ) : session ? (
           "game" in session ? (
             <AdmiralBattleScreen
               session={session}
@@ -97,6 +206,16 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
                   : createSession(fleet, difficulty),
               )
             }
+            battleCommander={{
+              level: savedCampaign.level,
+              hasSave:
+                savedCampaign.level > 1 ||
+                Object.keys(savedCampaign.records).length > 0,
+              onLaunch: () => {
+                setCampaign(loadCampaign());
+                setCampaignPhase({ screen: "armory" });
+              },
+            }}
           />
         )}
       </div>

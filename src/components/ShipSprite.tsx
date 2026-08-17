@@ -6,6 +6,7 @@ import {
   ReactNode,
   useId,
 } from "react";
+import { WeaponTier } from "@/game/campaign";
 import { FLEET_LENGTHS, ShipPlacement } from "@/game/types";
 import { BotGlyph, LionCrest, PlayerId } from "./PlayerBadge";
 
@@ -594,6 +595,78 @@ function Destroyer({ p }: { p: Palette }) {
   );
 }
 
+/** Halo color per weapon tier (tier 1 draws nothing). */
+const TIER_GLOW: Record<WeaponTier, string | null> = {
+  1: null,
+  2: "#38bdf8",
+  3: "#fb923c",
+  4: "#fbbf24",
+};
+
+/**
+ * Weapon-tier upgrade layer: reinforced turret ring at the bow, extra barrel
+ * detail, and stern tier pips in the tier's glow color.
+ */
+function TierMarks({
+  tier,
+  w,
+  hullEdge,
+}: {
+  tier: WeaponTier;
+  w: number;
+  hullEdge: string;
+}) {
+  const glow = TIER_GLOW[tier];
+  if (!glow) {
+    return null;
+  }
+  return (
+    <g aria-hidden>
+      {/* upgraded barrel: an extra reinforced gun tube at the bow */}
+      <line
+        x1={w * 0.08}
+        y1="50"
+        x2={w * 0.08 + 26}
+        y2="50"
+        stroke={glow}
+        strokeWidth={tier >= 3 ? 5 : 3.5}
+        strokeLinecap="round"
+        opacity="0.9"
+      />
+      {/* reinforced turret ring */}
+      <circle
+        cx={w * 0.08 + 34}
+        cy="50"
+        r={tier >= 3 ? 11 : 9}
+        fill="none"
+        stroke={glow}
+        strokeWidth="2.2"
+        opacity="0.85"
+      />
+      {tier >= 4 && (
+        <circle cx={w * 0.08 + 34} cy="50" r="3.4" fill={glow} opacity="0.9" />
+      )}
+      {/* stern tier pips */}
+      <g>
+        {Array.from({ length: tier - 1 }, (_, i) => (
+          <rect
+            key={i}
+            x={w - 24 - i * 9}
+            y="22"
+            width="6"
+            height="6"
+            rx="1.5"
+            transform={`rotate(45 ${w - 21 - i * 9} 25)`}
+            fill={glow}
+            stroke={hullEdge}
+            strokeWidth="0.8"
+          />
+        ))}
+      </g>
+    </g>
+  );
+}
+
 const HULLS: { d: string; Details: (props: { p: Palette }) => ReactNode }[] = [
   { d: CARRIER_D, Details: Carrier },
   { d: BATTLESHIP_D, Details: Battleship },
@@ -618,6 +691,8 @@ export interface ShipSpriteProps {
   player?: PlayerId;
   /** Damaged segments (0-based indices along the ship's length) to scorch. */
   hits?: number[];
+  /** Campaign weapon tier; tiers above 1 add upgrade detail and a glow accent. */
+  weaponTier?: WeaponTier;
 }
 
 /** Top-down warship silhouette; horizontal, drawn in a length×1-cell box. */
@@ -626,6 +701,7 @@ export function ShipSprite({
   variant = "fleet",
   player = "dutch",
   hits,
+  weaponTier,
 }: ShipSpriteProps) {
   const rawId = useId();
   const safeId = rawId.replace(/[^a-zA-Z0-9-]/g, "");
@@ -695,6 +771,9 @@ export function ShipSprite({
       {!sunk && player === "devin" && (
         <CircuitLines w={width} trim={skin.trim} />
       )}
+      {!sunk && weaponTier && weaponTier > 1 && (
+        <TierMarks tier={weaponTier} w={width} hullEdge={skin.hullEdge} />
+      )}
       {!sunk && player === "dutch" && shipId === 0 && (
         <LionDecal x={216} y={30} size={40} />
       )}
@@ -718,6 +797,7 @@ export interface ShipOverlayProps {
   variant?: ShipVariant;
   player?: PlayerId;
   hits?: number[];
+  weaponTier?: WeaponTier;
   className?: string;
   style?: CSSProperties;
   onPointerDown?: (e: ReactPointerEvent<HTMLDivElement>) => void;
@@ -730,6 +810,7 @@ export function ShipOverlay({
   variant = "fleet",
   player = "dutch",
   hits,
+  weaponTier,
   className = "",
   style,
   onPointerDown,
@@ -762,6 +843,7 @@ export function ShipOverlay({
           variant={variant}
           player={player}
           hits={hits}
+          weaponTier={weaponTier}
         />
       </div>
     </div>

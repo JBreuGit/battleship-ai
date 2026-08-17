@@ -11,6 +11,8 @@ export interface GameOverModalProps {
   playerShots: number;
   enemyShots: number;
   onPlayAgain: () => void;
+  /** Button label; defaults to "Play again". */
+  actionLabel?: string;
 }
 
 /** Victory/defeat modal with stats; fires a confetti burst on victory. */
@@ -19,6 +21,7 @@ export function GameOverModal({
   playerShots,
   enemyShots,
   onPlayAgain,
+  actionLabel,
 }: GameOverModalProps) {
   const won = winner === "player";
 
@@ -121,7 +124,7 @@ export function GameOverModal({
           onClick={onPlayAgain}
           className="mt-8 w-full rounded-xl bg-gradient-to-b from-amber-cta to-amber-deep px-4 py-3 font-display text-base font-bold tracking-wide text-navy-950 shadow-glow-amber transition-all duration-200 ease-out hover:brightness-110 active:scale-95"
         >
-          Play again
+          {actionLabel ?? "Play again"}
         </button>
       </div>
     </div>

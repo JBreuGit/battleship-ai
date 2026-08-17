@@ -8,7 +8,9 @@ import {
   useState,
 } from "react";
 import { AiPlayer, Difficulty, createAi } from "@/game/ai";
-import { Board, coordKey, shipCells } from "@/game/board";
+import { ShipClassId, WeaponTier, weaponTierInfo } from "@/game/campaign";
+import { createCampaignAi } from "@/game/campaignAi";
+import { Board, coordKey, isOnBoard, shipCells } from "@/game/board";
 import { randomFleet } from "@/game/placement";
 import { createRng } from "@/game/rng";
 import {
@@ -16,6 +18,7 @@ import {
   Coordinate,
   FLEET_LENGTHS,
   FireOutcome,
+  FireResult,
   Orientation,
   ShipPlacement,
 } from "@/game/types";
@@ -27,13 +30,14 @@ import { ShipId, ShipOverlay, ShipSprite } from "./ShipSprite";
 import {
   DamageSmoke,
   ExplosionEffect,
+  SHIP_NAMES,
   SplashEffect,
   SunkBanner,
   SunkCallout,
   SunkExplosions,
   WreckSmoke,
 } from "./ShotEffects";
-import { SoundControls } from "./useSoundManager";
+import { PlayVariant, SoundControls } from "./useSoundManager";
 
 type EnemyCell = "fog" | "miss" | "hit" | "sunk";
 export type PlayerCell = "water" | "ship" | "miss" | "hit" | "sunk";
@@ -57,6 +61,20 @@ export function createSession(
     playerBoard: new Board(fleet),
     enemyBoard: new Board(randomFleet(rng)),
     ai: createAi(difficulty, rng),
+  };
+}
+
+/** Build a campaign battle session against the level-scaled Devin AI. */
+export function createCampaignSession(
+  fleet: ShipPlacement[],
+  level: number,
+): Session {
+  const rng = createRng(Math.floor(Math.random() * 2 ** 32));
+  return {
+    fleet,
+    playerBoard: new Board(fleet),
+    enemyBoard: new Board(randomFleet(rng)),
+    ai: createCampaignAi(level, rng),
   };
 }
 
@@ -88,11 +106,29 @@ interface SunkFx {
   seq: number;
 }
 
+/** Campaign context for a battle: level, fleet weapon tiers, and outcome sink. */
+export interface CampaignBattleConfig {
+  level: number;
+  upgrades: Record<ShipClassId, WeaponTier>;
+  onResult: (won: boolean) => void;
+}
+
+/** Beefier cannon-fire renditions per weapon tier (tier 1 = stock sound). */
+const FIRE_VARIANTS: Record<WeaponTier, PlayVariant | undefined> = {
+  1: undefined,
+  2: { rate: 1.12, layers: 2 },
+  3: { rate: 0.72, gainMul: 1.2, layers: 2 },
+  4: { rate: 0.88, gainMul: 1.15, layers: 3 },
+};
+
 export interface BattleScreenProps {
   session: Session;
   difficulty: Difficulty;
   sound: SoundControls;
   onPlayAgain: () => void;
+  campaign?: CampaignBattleConfig;
+  /** Label for the game-over button (defaults to "Play again"). */
+  playAgainLabel?: string;
 }
 
 export function makeGrid<T>(fill: T): T[][] {
@@ -109,6 +145,8 @@ export function BattleScreen({
   difficulty,
   sound,
   onPlayAgain,
+  campaign,
+  playAgainLabel,
 }: BattleScreenProps) {
   const [enemyGrid, setEnemyGrid] = useState<EnemyCell[][]>(() =>
     makeGrid<EnemyCell>("fog"),
@@ -137,6 +175,11 @@ export function BattleScreen({
     seq: number;
   } | null>(null);
   const [winner, setWinner] = useState<Side | null>(null);
+  /** Ship classes whose once-per-battle special has been fired. */
+  const [usedSpecials, setUsedSpecials] = useState<ShipClassId[]>([]);
+  /** Heavy-shell special armed and waiting for a target cell. */
+  const [heavyArmed, setHeavyArmed] = useState<ShipClassId | null>(null);
+  const extraShotRef = useRef(false);
 
   const seqRef = useRef(0);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -217,6 +260,7 @@ export function BattleScreen({
       later(GAME_OVER_DELAY, () => {
         setWinner("enemy");
         sound.play("defeat");
+        campaign?.onResult(false);
       });
       return;
     }
@@ -225,18 +269,12 @@ export function BattleScreen({
       setBusy(false);
       sound.play("turn");
     });
-  }, [later, session, sound, soundFor]);
+  }, [campaign, later, session, sound, soundFor]);
 
-  const handleFire = useCallback(
-    (cell: Coordinate) => {
-      if (busy || winner || turn !== "player") {
-        return;
-      }
+  /** Apply one player shot's result to the enemy grid, fx, and wreck state. */
+  const applyPlayerShot = useCallback(
+    (cell: Coordinate, result: FireResult) => {
       const { enemyBoard } = session;
-      if (enemyBoard.hasBeenFiredAt(cell)) {
-        return;
-      }
-      const result = enemyBoard.fire(cell);
       shotsRef.current.player += 1;
       setPlayerShots(shotsRef.current.player);
 
@@ -260,7 +298,6 @@ export function BattleScreen({
         outcome: result.outcome,
         seq: seqRef.current,
       });
-      sound.play("fire");
       later(260, () => {
         sound.play(soundFor(result.outcome));
         if (result.outcome !== "miss") {
@@ -285,13 +322,24 @@ export function BattleScreen({
         setCallout({ shipId, attacker: "dutch", seq: seqRef.current });
         setShake({ board: "enemy", kind: "sunk", seq: seqRef.current });
       }
+    },
+    [later, session, sound, soundFor],
+  );
 
-      if (result.outcome === "fleet-sunk") {
+  /** Hand the turn over (or end the game) after the player's salvo. */
+  const finishPlayerTurn = useCallback(
+    (fleetSunk: boolean) => {
+      if (fleetSunk) {
         setBusy(true);
         later(GAME_OVER_DELAY, () => {
           setWinner("player");
           sound.play("victory");
+          campaign?.onResult(true);
         });
+        return;
+      }
+      if (extraShotRef.current) {
+        extraShotRef.current = false;
         return;
       }
       setBusy(true);
@@ -301,7 +349,104 @@ export function BattleScreen({
       });
       later(AI_TURN_DELAY, aiTurn);
     },
-    [aiTurn, busy, later, session, sound, soundFor, turn, winner],
+    [aiTurn, campaign, later, sound],
+  );
+
+  const handleFire = useCallback(
+    (cell: Coordinate) => {
+      if (busy || winner || turn !== "player") {
+        return;
+      }
+      const { enemyBoard } = session;
+      if (enemyBoard.hasBeenFiredAt(cell)) {
+        return;
+      }
+
+      if (heavyArmed !== null) {
+        // Heavy shell: blanket the 2×2 area anchored at the clicked cell.
+        setHeavyArmed(null);
+        setUsedSpecials((prev) => [...prev, heavyArmed]);
+        const anchor = {
+          x: Math.min(cell.x, BOARD_SIZE - 2),
+          y: Math.min(cell.y, BOARD_SIZE - 2),
+        };
+        const cells = [
+          anchor,
+          { x: anchor.x + 1, y: anchor.y },
+          { x: anchor.x, y: anchor.y + 1 },
+          { x: anchor.x + 1, y: anchor.y + 1 },
+        ].filter((c) => isOnBoard(c) && !enemyBoard.hasBeenFiredAt(c));
+        sound.play("fire", FIRE_VARIANTS[3]);
+        let fleetSunk = false;
+        for (const c of cells) {
+          const result = enemyBoard.fire(c);
+          applyPlayerShot(c, result);
+          fleetSunk = fleetSunk || result.outcome === "fleet-sunk";
+        }
+        finishPlayerTurn(fleetSunk);
+        return;
+      }
+
+      const result = enemyBoard.fire(cell);
+      sound.play("fire");
+      applyPlayerShot(cell, result);
+      finishPlayerTurn(result.outcome === "fleet-sunk");
+    },
+    [
+      applyPlayerShot,
+      busy,
+      finishPlayerTurn,
+      heavyArmed,
+      session,
+      sound,
+      turn,
+      winner,
+    ],
+  );
+
+  /** Fire a ship class's once-per-battle special (campaign mode only). */
+  const handleSpecial = useCallback(
+    (shipClass: ShipClassId, tier: WeaponTier) => {
+      if (busy || winner || turn !== "player" || !campaign) {
+        return;
+      }
+      if (tier === 2) {
+        // Rapid fire: the current turn's shot doesn't end the turn.
+        setUsedSpecials((prev) => [...prev, shipClass]);
+        extraShotRef.current = true;
+        sound.play("fire", FIRE_VARIANTS[2]);
+        return;
+      }
+      if (tier === 3) {
+        setHeavyArmed((prev) => (prev === shipClass ? null : shipClass));
+        sound.play("click");
+        return;
+      }
+      // Guided shot: a guaranteed hit on a random untouched enemy ship cell.
+      const { enemyBoard } = session;
+      const targets = enemyBoard
+        .occupiedCells()
+        .filter((c) => !enemyBoard.hasBeenFiredAt(c));
+      if (targets.length === 0) {
+        return;
+      }
+      setUsedSpecials((prev) => [...prev, shipClass]);
+      const cell = targets[Math.floor(Math.random() * targets.length)];
+      const result = enemyBoard.fire(cell);
+      sound.play("fire", FIRE_VARIANTS[4]);
+      applyPlayerShot(cell, result);
+      finishPlayerTurn(result.outcome === "fleet-sunk");
+    },
+    [
+      applyPlayerShot,
+      busy,
+      campaign,
+      finishPlayerTurn,
+      session,
+      sound,
+      turn,
+      winner,
+    ],
   );
 
   return (
@@ -329,6 +474,44 @@ export function BattleScreen({
         }
       />
 
+      {campaign && (
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-foam-400">
+            Armaments
+          </span>
+          {([0, 1, 2, 3, 4] as const).map((shipClass) => {
+            const tier = campaign.upgrades[shipClass];
+            if (tier < 2) {
+              return null;
+            }
+            const used = usedSpecials.includes(shipClass);
+            const sunkShip = playerSunk.includes(shipClass);
+            const disabled =
+              used || sunkShip || busy || !!winner || turn !== "player";
+            const armed = heavyArmed === shipClass;
+            return (
+              <button
+                key={shipClass}
+                type="button"
+                disabled={disabled}
+                onClick={() => handleSpecial(shipClass, tier)}
+                title={weaponTierInfo(tier).description}
+                className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider shadow-btn transition-all duration-150 ease-out active:scale-95 ${
+                  armed
+                    ? "animate-pulse-soft border-amber-cta bg-navy-700 text-amber-cta"
+                    : disabled
+                      ? "cursor-not-allowed border-navy-line/60 bg-navy-900 text-foam-400/40"
+                      : "border-amber-cta/50 bg-navy-800 text-amber-cta hover:-translate-y-0.5"
+                }`}
+              >
+                {SHIP_NAMES[shipClass]} · {weaponTierInfo(tier).name}
+                {used ? " ✓" : armed ? " — pick a target" : ""}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div
         className={`flex w-full flex-col items-center gap-6 transition-[filter] duration-700 lg:flex-row lg:items-start lg:justify-center lg:gap-10 ${
           winner === "enemy" ? "grayscale" : ""
@@ -336,7 +519,11 @@ export function BattleScreen({
       >
         <BoardShell
           title={`${PLAYERS.devin.name} waters`}
-          subtitle={`${difficulty} AI · your shots: ${playerShots}`}
+          subtitle={
+            campaign
+              ? `level ${campaign.level} AI · your shots: ${playerShots}`
+              : `${difficulty} AI · your shots: ${playerShots}`
+          }
           tone="navy"
           entranceDelayMs={80}
         >
@@ -474,6 +661,7 @@ export function BattleScreen({
                   shipId={shipId as ShipId}
                   placement={placement}
                   hits={damagedSegments(placement, playerGrid)}
+                  weaponTier={campaign?.upgrades[shipId as ShipClassId]}
                   className="pointer-events-none z-10 animate-ship-bob"
                   style={{
                     animationDelay: `${shipId * 0.55}s`,
@@ -520,6 +708,7 @@ export function BattleScreen({
           playerShots={playerShots}
           enemyShots={enemyShots}
           onPlayAgain={onPlayAgain}
+          actionLabel={playAgainLabel}
         />
       )}
     </div>
