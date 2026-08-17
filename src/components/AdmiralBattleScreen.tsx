@@ -624,8 +624,8 @@ export function AdmiralBattleScreen({
             className={`relative ${
               shake?.board === "enemy"
                 ? shake.kind === "sunk"
-                  ? "z-30 animate-board-shake"
-                  : "z-30 animate-board-shake-soft"
+                  ? "animate-board-shake"
+                  : "animate-board-shake-soft"
                 : ""
             }`}
           >
@@ -754,8 +754,8 @@ export function AdmiralBattleScreen({
             className={`relative ${
               shake?.board === "player"
                 ? shake.kind === "sunk"
-                  ? "z-30 animate-board-shake"
-                  : "z-30 animate-board-shake-soft"
+                  ? "animate-board-shake"
+                  : "animate-board-shake-soft"
                 : ""
             }`}
           >
