@@ -129,12 +129,10 @@ class SoundEngine {
   play(name: SoundName): void {
     const ctx = this.context();
     if (!ctx || !isSoundEnabled()) {
-      console.log(`[sound] blocked ${name} (muted)`);
       return;
     }
     if (ctx.state === "suspended") {
       if (!this.unlocked) {
-        console.log(`[sound] blocked ${name} (locked)`);
         return;
       }
       void ctx.resume();
@@ -143,7 +141,6 @@ class SoundEngine {
     const now = performance.now();
     const last = this.lastPlayed.get(name);
     if (last !== undefined && now - last < spec.throttleMs) {
-      console.log(`[sound] blocked ${name} (throttled)`);
       return;
     }
     const buffer = this.buffers.get(name);
@@ -152,7 +149,6 @@ class SoundEngine {
       return;
     }
     this.lastPlayed.set(name, now);
-    console.log(`[sound] play ${name}`);
 
     const source = ctx.createBufferSource();
     source.buffer = buffer;
