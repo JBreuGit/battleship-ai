@@ -69,7 +69,9 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
   });
   const [promotion, setPromotion] = useState<RankInfo | null>(null);
   // Peek at the save so the mode card can offer "Continue Campaign".
-  const [savedCampaign] = useState<CampaignState>(() => loadCampaign());
+  const [savedCampaign, setSavedCampaign] = useState<CampaignState>(() =>
+    loadCampaign(),
+  );
 
   const updateCampaign = (next: CampaignState) => {
     saveCampaign(next);
@@ -97,8 +99,15 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
           updateCampaign(applyUpgrade(campaign, shipClass))
         }
         onStartLevel={() => setCampaignPhase({ screen: "placement" })}
-        onExit={() => setCampaign(null)}
-        onReset={() => setCampaign(resetCampaign())}
+        onExit={() => {
+          setSavedCampaign(campaign);
+          setCampaign(null);
+        }}
+        onReset={() => {
+          const fresh = resetCampaign();
+          setSavedCampaign(fresh);
+          setCampaign(fresh);
+        }}
       />
     ) : campaignPhase.screen === "placement" ? (
       <PlacementScreen
