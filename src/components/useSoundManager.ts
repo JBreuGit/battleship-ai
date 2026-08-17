@@ -89,6 +89,21 @@ function pickIndex(poolSize: number, last: number | undefined): number {
   return index;
 }
 
+/** Prefer en-US, then en-GB, then any English voice. */
+function pickEnglishVoice(
+  voices: SpeechSynthesisVoice[],
+): SpeechSynthesisVoice | null {
+  for (const lang of ["en-US", "en-GB"]) {
+    const match = voices.find((v) => v.lang.replace("_", "-") === lang);
+    if (match) {
+      return match;
+    }
+  }
+  return (
+    voices.find((v) => v.lang.toLowerCase().startsWith("en")) ?? null
+  );
+}
+
 const listeners = new Set<() => void>();
 
 function subscribe(listener: () => void): () => void {
@@ -171,6 +186,11 @@ class SoundEngine {
           this.voiceFailed.add(src);
         });
       this.voicePending.set(src, load);
+    }
+    // Chrome populates getVoices() asynchronously; touching it here makes
+    // the English voice list ready before the first Devin line plays.
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.getVoices();
     }
   }
 
@@ -322,6 +342,11 @@ class SoundEngine {
     const line = pool[index];
 
     const utterance = new SpeechSynthesisUtterance(line);
+    utterance.lang = "en-US";
+    const voice = pickEnglishVoice(window.speechSynthesis.getVoices());
+    if (voice) {
+      utterance.voice = voice;
+    }
     utterance.pitch = 0.5;
     utterance.rate = 1.05;
     utterance.volume = Math.min(1, VOICE_GAIN * (0.9 + Math.random() * 0.1));
