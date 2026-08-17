@@ -68,6 +68,7 @@ class SoundEngine {
   private ctx: AudioContext | null = null;
   private buffers = new Map<SoundName, AudioBuffer>();
   private pending = new Map<SoundName, Promise<void>>();
+  private failed = new Set<SoundName>();
   private lastPlayed = new Map<SoundName, number>();
   private unlocked = false;
 
@@ -86,7 +87,11 @@ class SoundEngine {
       return;
     }
     for (const name of Object.keys(SOUNDS) as SoundName[]) {
-      if (this.buffers.has(name) || this.pending.has(name)) {
+      if (
+        this.buffers.has(name) ||
+        this.pending.has(name) ||
+        this.failed.has(name)
+      ) {
         continue;
       }
       const load = fetch(SOUNDS[name].src)
@@ -97,6 +102,7 @@ class SoundEngine {
         })
         .catch(() => {
           this.pending.delete(name);
+          this.failed.add(name);
         });
       this.pending.set(name, load);
     }
@@ -123,10 +129,12 @@ class SoundEngine {
   play(name: SoundName): void {
     const ctx = this.context();
     if (!ctx || !isSoundEnabled()) {
+      console.log(`[sound] blocked ${name} (muted)`);
       return;
     }
     if (ctx.state === "suspended") {
       if (!this.unlocked) {
+        console.log(`[sound] blocked ${name} (locked)`);
         return;
       }
       void ctx.resume();
@@ -135,6 +143,7 @@ class SoundEngine {
     const now = performance.now();
     const last = this.lastPlayed.get(name);
     if (last !== undefined && now - last < spec.throttleMs) {
+      console.log(`[sound] blocked ${name} (throttled)`);
       return;
     }
     const buffer = this.buffers.get(name);
@@ -143,6 +152,7 @@ class SoundEngine {
       return;
     }
     this.lastPlayed.set(name, now);
+    console.log(`[sound] play ${name}`);
 
     const source = ctx.createBufferSource();
     source.buffer = buffer;
