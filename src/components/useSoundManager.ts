@@ -68,6 +68,7 @@ class SoundEngine {
   private ctx: AudioContext | null = null;
   private buffers = new Map<SoundName, AudioBuffer>();
   private pending = new Map<SoundName, Promise<void>>();
+  private failed = new Set<SoundName>();
   private lastPlayed = new Map<SoundName, number>();
   private unlocked = false;
 
@@ -86,7 +87,11 @@ class SoundEngine {
       return;
     }
     for (const name of Object.keys(SOUNDS) as SoundName[]) {
-      if (this.buffers.has(name) || this.pending.has(name)) {
+      if (
+        this.buffers.has(name) ||
+        this.pending.has(name) ||
+        this.failed.has(name)
+      ) {
         continue;
       }
       const load = fetch(SOUNDS[name].src)
@@ -97,6 +102,7 @@ class SoundEngine {
         })
         .catch(() => {
           this.pending.delete(name);
+          this.failed.add(name);
         });
       this.pending.set(name, load);
     }
