@@ -1,7 +1,8 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { PLAYERS, PlayerBadge } from "./PlayerBadge";
+import { PLAYERS } from "./PlayerBadge";
+import { CALLSIGNS, PlayerAvatarBadge } from "./PlayerAvatar";
 
 interface Speck {
   left: string;
@@ -60,12 +61,22 @@ export function AmbientParticles() {
 export function SplashScreen({ onDeploy }: { onDeploy: () => void }) {
   return (
     <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-8 px-4 py-16 text-center">
-      <div className="animate-rise-in flex items-center gap-4 sm:gap-6">
-        <PlayerBadge player="dutch" size="lg" active />
-        <span className="font-display text-lg font-extrabold tracking-widest text-foam-400">
+      <div className="animate-rise-in flex items-start gap-4 sm:gap-6">
+        <div className="flex flex-col items-center gap-1.5">
+          <PlayerAvatarBadge player="dutch" size="xl" active />
+          <p className="font-mono text-[10px] uppercase tracking-widest text-dutch-400/90">
+            {CALLSIGNS.dutch}
+          </p>
+        </div>
+        <span className="self-center pb-5 font-display text-lg font-extrabold tracking-widest text-foam-400">
           VS
         </span>
-        <PlayerBadge player="devin" size="lg" active />
+        <div className="flex flex-col items-center gap-1.5">
+          <PlayerAvatarBadge player="devin" size="xl" active />
+          <p className="font-mono text-[10px] uppercase tracking-widest text-devin-400/90">
+            {CALLSIGNS.devin}
+          </p>
+        </div>
       </div>
 
       <div className="animate-rise-in [animation-delay:120ms]">

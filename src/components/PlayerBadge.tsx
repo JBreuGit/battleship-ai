@@ -35,49 +35,6 @@ export const PLAYERS: Record<PlayerId, PlayerTheme> = {
   },
 };
 
-const SIZES = {
-  sm: "h-8 w-8",
-  md: "h-11 w-11",
-  lg: "h-20 w-20",
-} as const;
-
-export interface PlayerBadgeProps {
-  player: PlayerId;
-  size?: keyof typeof SIZES;
-  /** Pulse the badge in the player's color (their turn). */
-  active?: boolean;
-}
-
-/** Circular player avatar in a metallic ring, tinted in the player's color. */
-export const PlayerBadge = memo(function PlayerBadge({
-  player,
-  size = "md",
-  active,
-}: PlayerBadgeProps) {
-  const theme = PLAYERS[player];
-  return (
-    <span
-      title={theme.name}
-      className={`relative inline-flex shrink-0 items-center justify-center rounded-full p-[2.5px] transition-shadow duration-300 ${
-        active ? theme.pulseClass : ""
-      }`}
-      style={{
-        backgroundImage: `linear-gradient(145deg, #e2e8f0 0%, #64748b 30%, ${theme.from} 55%, #475569 80%, #cbd5e1 100%)`,
-      }}
-    >
-      <span
-        className={`flex items-center justify-center rounded-full bg-navy-900 ${SIZES[size]}`}
-      >
-        {player === "dutch" ? (
-          <LionCrest className="h-[68%] w-[68%]" />
-        ) : (
-          <BotGlyph className="h-[62%] w-[62%]" />
-        )}
-      </span>
-    </span>
-  );
-});
-
 /** Heraldic orange lion head — Dutch Navy crest. */
 export function LionCrest({ className }: { className?: string }) {
   return (
@@ -177,75 +134,6 @@ export function BotGlyph({ className }: { className?: string }) {
         strokeLinecap="round"
       />
     </svg>
-  );
-}
-
-export interface ScoreboardProps {
-  /** Whose turn it is; null once the game is over. */
-  activePlayer: PlayerId | null;
-  /** Ships destroyed in the Dutch Navy (human) fleet. */
-  dutchSunk: number;
-  /** Ships destroyed in the Devin AI fleet. */
-  devinSunk: number;
-  /** Center status message. */
-  message: string;
-}
-
-/** HUD strip: both player avatars with ships-remaining pips around a status pill. */
-export function Scoreboard({
-  activePlayer,
-  dutchSunk,
-  devinSunk,
-  message,
-}: ScoreboardProps) {
-  return (
-    <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-4 gap-y-2 sm:justify-between">
-      <ScoreboardSide player="dutch" sunkCount={dutchSunk} activePlayer={activePlayer} />
-      <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1">
-        <p
-          className={`mx-auto flex w-fit items-center gap-2 rounded-full border bg-navy-900/80 px-4 py-1.5 text-center text-[11px] font-semibold uppercase tracking-wider transition-all duration-200 sm:text-xs ${
-            activePlayer === null
-              ? "border-navy-line text-foam-400"
-              : activePlayer === "dutch"
-                ? "animate-glow-pulse-dutch border-dutch-500/60 text-dutch-400"
-                : "animate-glow-pulse-devin border-devin-400/60 text-devin-400"
-          }`}
-        >
-          {message}
-        </p>
-      </div>
-      <ScoreboardSide
-        player="devin"
-        sunkCount={devinSunk}
-        activePlayer={activePlayer}
-        reverse
-      />
-    </div>
-  );
-}
-
-function ScoreboardSide({
-  player,
-  sunkCount,
-  activePlayer,
-  reverse,
-}: {
-  player: PlayerId;
-  sunkCount: number;
-  activePlayer: PlayerId | null;
-  reverse?: boolean;
-}) {
-  const theme = PLAYERS[player];
-  return (
-    <div
-      className={`flex items-center gap-2 ${reverse ? "flex-row-reverse" : ""}`}
-    >
-      <PlayerBadge player={player} active={activePlayer === player} />
-      <div className={reverse ? "text-right" : ""}>
-        <p className={`text-xs font-bold ${theme.text}`}>{theme.name}</p>
-        <ShipPips player={player} sunkCount={sunkCount} />
-      </div>
-    </div>
   );
 }
 

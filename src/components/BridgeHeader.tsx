@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { PLAYERS, PlayerBadge } from "./PlayerBadge";
+import { PLAYERS } from "./PlayerBadge";
+import { PlayerAvatarBadge } from "./PlayerAvatar";
 
 /** Sticky ship's-bridge control-panel header: brushed metal, rivets, stencil title, mini radar. */
 export function BridgeHeader({ children }: { children?: ReactNode }) {
@@ -12,8 +13,8 @@ export function BridgeHeader({ children }: { children?: ReactNode }) {
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
         <div className="flex items-center gap-3">
           <span className="flex items-center -space-x-1.5">
-            <PlayerBadge player="dutch" size="sm" />
-            <PlayerBadge player="devin" size="sm" />
+            <PlayerAvatarBadge player="dutch" size="sm" />
+            <PlayerAvatarBadge player="devin" size="sm" />
           </span>
           <div>
             <h1 className="font-stencil text-base tracking-wider sm:text-lg">

@@ -35,7 +35,8 @@ import {
 } from "./BattleScreen";
 import { BoardShell } from "./BoardShell";
 import { GameOverModal } from "./GameOverModal";
-import { PLAYERS, Scoreboard } from "./PlayerBadge";
+import { PLAYERS } from "./PlayerBadge";
+import { Scoreboard } from "./PlayerAvatar";
 import { ShipId, ShipOverlay } from "./ShipSprite";
 import {
   DamageSmoke,
