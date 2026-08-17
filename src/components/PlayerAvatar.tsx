@@ -323,10 +323,13 @@ export const PlayerAvatarBadge = memo(function PlayerAvatarBadge({
         active ? theme.pulseClass : ""
       }`}
     >
-      <span className="absolute inset-0 overflow-hidden rounded-full">
-        <AvatarPortrait player={player} />
-      </span>
-      <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" aria-hidden>
+      <span
+        className={`absolute inset-0 block ${active ? "animate-handoff-pop" : ""}`}
+      >
+        <span className="absolute inset-0 overflow-hidden rounded-full">
+          <AvatarPortrait player={player} />
+        </span>
+        <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" aria-hidden>
         {player === "dutch" ? (
           <>
             <circle cx="50" cy="50" r="47" fill="none" stroke="#b45309" strokeWidth="5.5" />
@@ -364,7 +367,8 @@ export const PlayerAvatarBadge = memo(function PlayerAvatarBadge({
             ))}
           </>
         )}
-      </svg>
+        </svg>
+      </span>
     </span>
   );
 });
@@ -381,6 +385,8 @@ export interface TeamPanelProps {
   sunkCount: number;
   /** Glow + pulse when it is this player's turn. */
   active?: boolean;
+  /** Fade back while the other side holds the turn. */
+  dimmed?: boolean;
   /** Mirror the layout (avatar on the right). */
   reverse?: boolean;
 }
@@ -410,6 +416,7 @@ export function Scoreboard({
           player="dutch"
           sunkCount={dutchSunk}
           active={activePlayer === "dutch"}
+          dimmed={activePlayer === "devin"}
         />
       </div>
       <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1">
@@ -430,6 +437,7 @@ export function Scoreboard({
           player="devin"
           sunkCount={devinSunk}
           active={activePlayer === "devin"}
+          dimmed={activePlayer === "dutch"}
           reverse
         />
       </div>
@@ -442,6 +450,7 @@ export function TeamPanel({
   player,
   sunkCount,
   active,
+  dimmed,
   reverse,
 }: TeamPanelProps) {
   const theme = PLAYERS[player];
@@ -455,7 +464,7 @@ export function TeamPanel({
             ? "animate-glow-pulse-dutch border-dutch-500/60"
             : "animate-glow-pulse-devin border-devin-400/60"
           : "border-navy-line"
-      }`}
+      } ${dimmed ? "opacity-70 saturate-[0.75]" : ""}`}
     >
       {/* card clip */}
       <span
