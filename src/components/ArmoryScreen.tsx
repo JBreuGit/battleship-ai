@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ABILITY_UNLOCKS,
   CAMPAIGN_LEVELS,
   CampaignState,
   RANKS,
@@ -131,6 +132,39 @@ export function ArmoryScreen({
             );
           })}
         </div>
+      </section>
+
+      {/* Admiral ship abilities unlocked by campaign level */}
+      <section className="rounded-2xl border border-navy-line/60 bg-navy-900/60 p-4">
+        <p className="font-mono text-[10px] uppercase tracking-widest text-foam-400">
+          Ship abilities — unlocked by rank (both fleets)
+        </p>
+        <ul className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {ABILITY_UNLOCKS.map(({ ability, ship, name, level }) => {
+            const unlocked = campaign.level >= level;
+            return (
+              <li
+                key={ability}
+                className={`flex items-baseline justify-between gap-2 rounded-md border px-2.5 py-1.5 font-mono text-[11px] ${
+                  unlocked
+                    ? "border-amber-cta/40 text-foam-200"
+                    : "border-navy-line/70 text-foam-400/60"
+                }`}
+              >
+                <span className="truncate">
+                  {ship} · {name}
+                </span>
+                <span
+                  className={`shrink-0 uppercase tracking-widest ${
+                    unlocked ? "font-bold text-amber-cta" : ""
+                  }`}
+                >
+                  {unlocked ? "Unlocked" : `Lv ${level}`}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
       </section>
 
       {/* Armory: weapon upgrades per ship class */}

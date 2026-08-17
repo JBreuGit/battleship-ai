@@ -18,13 +18,9 @@ import {
   AdmiralBattleScreen,
   AdmiralSession,
   createAdmiralSession,
+  createCampaignAdmiralSession,
 } from "./AdmiralBattleScreen";
-import {
-  BattleScreen,
-  Session,
-  createCampaignSession,
-  createSession,
-} from "./BattleScreen";
+import { BattleScreen, Session, createSession } from "./BattleScreen";
 import { ArmoryScreen } from "./ArmoryScreen";
 import { BridgeHeader, CoordinateReadout } from "./BridgeHeader";
 import { GameMode, PlacementScreen } from "./PlacementScreen";
@@ -54,7 +50,7 @@ export default function BattleshipGame() {
 type CampaignPhase =
   | { screen: "armory" }
   | { screen: "placement" }
-  | { screen: "battle"; session: Session };
+  | { screen: "battle"; session: AdmiralSession };
 
 function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
   const sound = useSoundManager();
@@ -123,12 +119,12 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
         onStart={(fleet) =>
           setCampaignPhase({
             screen: "battle",
-            session: createCampaignSession(fleet, campaign.level),
+            session: createCampaignAdmiralSession(fleet, campaign.level),
           })
         }
       />
     ) : (
-      <BattleScreen
+      <AdmiralBattleScreen
         session={campaignPhase.session}
         difficulty="hard"
         sound={sound}

@@ -31,7 +31,7 @@ export interface AdvancedAiPlayer {
 }
 
 /** Centers whose 3x3 scan area lies fully on the board. */
-function randomScanCenter(rng: Rng): Coordinate {
+export function randomScanCenter(rng: Rng): Coordinate {
   return {
     x: 1 + randomInt(rng, BOARD_SIZE - 2),
     y: 1 + randomInt(rng, BOARD_SIZE - 2),

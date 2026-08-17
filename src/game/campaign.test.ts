@@ -1,8 +1,14 @@
+import { INITIAL_USES, fullLoadout } from "./advanced";
+import type { AbilityKind } from "./advanced";
 import {
+  ABILITY_UNLOCKS,
+  ABILITY_UNLOCK_LEVELS,
   CAMPAIGN_LEVELS,
   CAMPAIGN_STORAGE_KEY,
   RANKS,
+  STEALTH_UNLOCK_LEVEL,
   UPGRADE_LEVELS,
+  campaignLoadout,
   applyUpgrade,
   createCampaignState,
   deserializeCampaign,
@@ -144,5 +150,47 @@ describe("persistence", () => {
     const fresh = resetCampaign();
     expect(fresh.level).toBe(1);
     expect(loadCampaign()).toEqual(fresh);
+  });
+});
+
+describe("Admiral ability unlock schedule", () => {
+  it("unlocks in the designed order at levels inside the campaign", () => {
+    expect(ABILITY_UNLOCK_LEVELS["rapid-fire"]).toBe(4);
+    expect(ABILITY_UNLOCK_LEVELS.sonar).toBe(7);
+    expect(STEALTH_UNLOCK_LEVEL).toBe(10);
+    expect(ABILITY_UNLOCK_LEVELS.barrage).toBe(13);
+    expect(ABILITY_UNLOCK_LEVELS.recon).toBe(16);
+    for (const level of Object.values(ABILITY_UNLOCK_LEVELS)) {
+      expect(level).toBeGreaterThan(1);
+      expect(level).toBeLessThanOrEqual(CAMPAIGN_LEVELS);
+    }
+  });
+
+  it("lists the display schedule in ascending unlock order", () => {
+    const levels = ABILITY_UNLOCKS.map((entry) => entry.level);
+    expect(levels).toEqual([...levels].sort((a, b) => a - b));
+    expect(ABILITY_UNLOCKS).toHaveLength(5);
+  });
+
+  it("grants no active abilities or stealth at level 1", () => {
+    const loadout = campaignLoadout(1);
+    expect(Object.values(loadout.uses)).toEqual([0, 0, 0, 0]);
+    expect(loadout.stealth).toBe(false);
+  });
+
+  it("arms each ability exactly at its unlock level", () => {
+    for (const [kind, level] of Object.entries(ABILITY_UNLOCK_LEVELS) as [
+      AbilityKind,
+      number,
+    ][]) {
+      expect(campaignLoadout(level - 1).uses[kind]).toBe(0);
+      expect(campaignLoadout(level).uses[kind]).toBe(INITIAL_USES[kind]);
+    }
+    expect(campaignLoadout(STEALTH_UNLOCK_LEVEL - 1).stealth).toBe(false);
+    expect(campaignLoadout(STEALTH_UNLOCK_LEVEL).stealth).toBe(true);
+  });
+
+  it("matches the ordinary Admiral kit once everything is unlocked", () => {
+    expect(campaignLoadout(CAMPAIGN_LEVELS)).toEqual(fullLoadout());
   });
 });
