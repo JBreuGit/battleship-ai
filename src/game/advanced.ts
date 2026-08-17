@@ -45,6 +45,21 @@ export const INITIAL_USES: Record<AbilityKind, number> = {
 };
 
 /**
+ * A player's ability kit for one engagement. Admiral mode grants the
+ * full kit to both sides; Battle Commander hands out partial kits that
+ * grow with campaign level.
+ */
+export interface AbilityLoadout {
+  uses: Record<AbilityKind, number>;
+  /** Whether the submarine starts with silent running armed. */
+  stealth: boolean;
+}
+
+export function fullLoadout(): AbilityLoadout {
+  return { uses: { ...INITIAL_USES }, stealth: true };
+}
+
+/**
  * A shot in Admiral mode can additionally be "evaded": the submarine's
  * silent running absorbed what would have been a hit. The square takes no
  * damage and stays targetable — firing at it again will hit.
@@ -169,10 +184,11 @@ export class AdvancedGame {
   constructor(
     fleets: [ShipPlacement[], ShipPlacement[]],
     private readonly rng: Rng,
+    loadouts: [AbilityLoadout, AbilityLoadout] = [fullLoadout(), fullLoadout()],
   ) {
     this.boards = [new Board(fleets[0]), new Board(fleets[1])];
-    this.uses = [{ ...INITIAL_USES }, { ...INITIAL_USES }];
-    this.stealth = [true, true];
+    this.uses = [{ ...loadouts[0].uses }, { ...loadouts[1].uses }];
+    this.stealth = [loadouts[0].stealth, loadouts[1].stealth];
     this.pinged = [new Set(), new Set()];
   }
 
@@ -237,6 +253,32 @@ export class AdvancedGame {
       this.endTurn();
     }
     return result;
+  }
+
+  /**
+   * Grant extra shots this turn without consuming an ability use — the
+   * hook for campaign weapon specials (e.g. the rapid-fire cannon).
+   * Must be invoked before the turn's first shot.
+   */
+  boostShots(player: PlayerId, count: number): void {
+    this.assertActive(player);
+    if (this.actedThisTurn || this.pendingShots !== 1) {
+      throw new AdvancedRuleError("already-acted");
+    }
+    this.pendingShots = Math.max(1, count);
+  }
+
+  /**
+   * Fire a multi-cell salvo in one action without consuming an ability
+   * use — the hook for campaign weapon specials (e.g. the heavy shell's
+   * 2×2 blanket). Off-board and already-fired cells are skipped.
+   */
+  fireSalvo(player: PlayerId, targets: Coordinate[]): BarrageReport {
+    this.assertActive(player);
+    if (this.actedThisTurn || this.pendingShots !== 1) {
+      throw new AdvancedRuleError("already-acted");
+    }
+    return this.salvo(player, targets);
   }
 
   /**
@@ -308,11 +350,21 @@ export class AdvancedGame {
       throw new AdvancedRuleError("off-board");
     }
     this.uses[player].barrage -= 1;
+    return this.salvo(
+      player,
+      BARRAGE_PATTERN.map(({ dx, dy }) => ({
+        x: center.x + dx,
+        y: center.y + dy,
+      })),
+    );
+  }
+
+  private salvo(player: PlayerId, targets: Coordinate[]): BarrageReport {
     const board = this.boards[this.opponent(player)];
     const shots: BarrageReport["shots"] = [];
     const skipped: Coordinate[] = [];
-    for (const { dx, dy } of BARRAGE_PATTERN) {
-      const target = { x: center.x + dx, y: center.y + dy };
+    this.actedThisTurn = true;
+    for (const target of targets) {
       if (!isOnBoard(target) || board.hasBeenFiredAt(target)) {
         skipped.push(target);
         continue;

@@ -1,6 +1,69 @@
+import { AbilityKind, AbilityLoadout, INITIAL_USES } from "./advanced";
 import { CAMPAIGN_LEVELS } from "./campaignAi";
 
 export { CAMPAIGN_LEVELS };
+
+/**
+ * Campaign level at which each Admiral ship ability unlocks. Both sides
+ * fight with the same kit, so every unlock also arms Devin AI.
+ */
+export const ABILITY_UNLOCK_LEVELS: Record<AbilityKind, number> = {
+  "rapid-fire": 4,
+  sonar: 7,
+  barrage: 13,
+  recon: 16,
+};
+
+/** Campaign level at which the submarine's silent running unlocks. */
+export const STEALTH_UNLOCK_LEVEL = 10;
+
+/** Human-readable unlock schedule, in unlock order, for menu screens. */
+export const ABILITY_UNLOCKS: readonly {
+  ability: AbilityKind | "silent-running";
+  ship: string;
+  name: string;
+  level: number;
+}[] = [
+  {
+    ability: "rapid-fire",
+    ship: "Destroyer",
+    name: "Rapid fire",
+    level: ABILITY_UNLOCK_LEVELS["rapid-fire"],
+  },
+  {
+    ability: "sonar",
+    ship: "Cruiser",
+    name: "Active sonar",
+    level: ABILITY_UNLOCK_LEVELS.sonar,
+  },
+  {
+    ability: "silent-running",
+    ship: "Submarine",
+    name: "Silent running",
+    level: STEALTH_UNLOCK_LEVEL,
+  },
+  {
+    ability: "barrage",
+    ship: "Battleship",
+    name: "Main-gun barrage",
+    level: ABILITY_UNLOCK_LEVELS.barrage,
+  },
+  {
+    ability: "recon",
+    ship: "Carrier",
+    name: "Recon flight",
+    level: ABILITY_UNLOCK_LEVELS.recon,
+  },
+];
+
+/** The ability kit both sides carry at a given campaign level. */
+export function campaignLoadout(level: number): AbilityLoadout {
+  const uses = {} as Record<AbilityKind, number>;
+  for (const kind of Object.keys(ABILITY_UNLOCK_LEVELS) as AbilityKind[]) {
+    uses[kind] = level >= ABILITY_UNLOCK_LEVELS[kind] ? INITIAL_USES[kind] : 0;
+  }
+  return { uses, stealth: level >= STEALTH_UNLOCK_LEVEL };
+}
 
 /** Fleet index: 0 carrier, 1 battleship, 2 cruiser, 3 submarine, 4 destroyer. */
 export type ShipClassId = 0 | 1 | 2 | 3 | 4;

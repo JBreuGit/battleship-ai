@@ -1,3 +1,9 @@
+import { AdvancedGame, BarrageReport, PlayerId } from "./advanced";
+import {
+  AdvancedAiPlayer,
+  TurnEvent,
+  randomScanCenter,
+} from "./advancedAi";
 import { BaseAi, HardAi } from "./ai";
 import { coordKey, isOnBoard } from "./board";
 import { Rng, pick } from "./rng";
@@ -145,4 +151,162 @@ export class CampaignAi extends HardAi {
 
 export function createCampaignAi(level: number, rng: Rng): BaseAi {
   return new CampaignAi(level, rng);
+}
+
+/**
+ * Campaign opponent for Battle Commander's Admiral-rules battles: the
+ * level-scaled shot selection of CampaignAi plus an ability policy over
+ * whatever the level's loadout has unlocked. Low levels rarely reach for
+ * an ability; level 20 uses one nearly every eligible turn — barrage and
+ * rapid fire to finish wounded ships, recon and sonar while searching.
+ */
+export class CampaignAdmiralAi extends CampaignAi implements AdvancedAiPlayer {
+  private readonly fireQueue: Coordinate[] = [];
+  private suspects: Coordinate[] = [];
+
+  takeTurn(game: AdvancedGame, me: PlayerId): TurnEvent[] {
+    const t = (this.params.level - 1) / (CAMPAIGN_LEVELS - 1);
+    const abilityChance = 0.25 + 0.7 * t;
+    const hunting =
+      this.cellsWhere("hit").length > 0 || this.pendingQueue().length > 0;
+    if (this.rng() < abilityChance) {
+      const events = hunting
+        ? this.finisherAbility(game, me)
+        : this.searchAbility(game, me);
+      if (events) {
+        return events;
+      }
+    }
+    return this.fireTurn(game, me);
+  }
+
+  noteRevealedEnemyCell(cell: Coordinate): void {
+    this.fireQueue.push(cell);
+  }
+
+  private pendingQueue(): Coordinate[] {
+    return this.fireQueue.filter((cell) => this.knowledge(cell) === "unknown");
+  }
+
+  /** Spend barrage or rapid fire on a wounded ship. */
+  private finisherAbility(
+    game: AdvancedGame,
+    me: PlayerId,
+  ): TurnEvent[] | null {
+    if (game.abilityAvailable(me, "barrage")) {
+      const center = this.pickTarget();
+      const report = game.useBarrage(me, center);
+      this.absorbBarrage(report);
+      return [{ kind: "barrage", center, report }];
+    }
+    if (game.abilityAvailable(me, "rapid-fire")) {
+      return this.rapidFireTurn(game, me);
+    }
+    return null;
+  }
+
+  /** Spend a scan (or spare firepower) while no ship is wounded. */
+  private searchAbility(
+    game: AdvancedGame,
+    me: PlayerId,
+  ): TurnEvent[] | null {
+    if (game.abilityAvailable(me, "recon")) {
+      const center = randomScanCenter(this.rng);
+      const report = game.useRecon(me, center);
+      this.fireQueue.push(...report.contacts);
+      const contactKeys = new Set(report.contacts.map(coordKey));
+      for (const cell of report.cells) {
+        if (
+          !contactKeys.has(coordKey(cell)) &&
+          this.knowledge(cell) === "unknown"
+        ) {
+          this.setKnowledge(cell, "cleared");
+        }
+      }
+      return [{ kind: "recon", center, report }];
+    }
+    if (game.abilityAvailable(me, "sonar")) {
+      const center = randomScanCenter(this.rng);
+      const report = game.useSonar(me, center);
+      this.absorbScan(report.cells, report.contacts > 0);
+      return [{ kind: "sonar", center, report }];
+    }
+    if (game.abilityAvailable(me, "rapid-fire")) {
+      return this.rapidFireTurn(game, me);
+    }
+    if (game.abilityAvailable(me, "barrage")) {
+      const center = this.randomUnknown();
+      const report = game.useBarrage(me, center);
+      this.absorbBarrage(report);
+      return [{ kind: "barrage", center, report }];
+    }
+    return null;
+  }
+
+  private rapidFireTurn(game: AdvancedGame, me: PlayerId): TurnEvent[] {
+    game.useRapidFire(me);
+    const events: TurnEvent[] = [{ kind: "rapid-fire" }];
+    events.push(...this.fireTurn(game, me));
+    if (game.winner === null) {
+      events.push(...this.fireTurn(game, me));
+    }
+    return events;
+  }
+
+  private fireTurn(game: AdvancedGame, me: PlayerId): TurnEvent[] {
+    const target = this.pickTarget();
+    const result = game.fireShot(me, target);
+    if (result.outcome === "evaded") {
+      this.fireQueue.push(target); // the sub is there — shoot it again
+    } else {
+      this.notify(target, result);
+    }
+    return [{ kind: "shot", target, result }];
+  }
+
+  private pickTarget(): Coordinate {
+    const queued = this.pendingQueue();
+    if (queued.length > 0) {
+      return queued[0];
+    }
+    if (this.cellsWhere("hit").length === 0) {
+      this.suspects = this.suspects.filter(
+        (cell) => this.knowledge(cell) === "unknown",
+      );
+      if (this.suspects.length > 0) {
+        return pick(this.rng, this.suspects);
+      }
+    }
+    return this.nextShot();
+  }
+
+  private absorbScan(cells: Coordinate[], contact: boolean): void {
+    for (const cell of cells) {
+      if (this.knowledge(cell) !== "unknown") {
+        continue;
+      }
+      if (contact) {
+        this.suspects.push(cell);
+      } else {
+        this.setKnowledge(cell, "cleared");
+      }
+    }
+  }
+
+  private absorbBarrage(report: BarrageReport): void {
+    for (const { target, result } of report.shots) {
+      if (result.outcome === "evaded") {
+        this.fireQueue.push(target);
+      } else {
+        this.notify(target, result);
+      }
+    }
+  }
+}
+
+export function createCampaignAdmiralAi(
+  level: number,
+  rng: Rng,
+): AdvancedAiPlayer {
+  return new CampaignAdmiralAi(level, rng);
 }

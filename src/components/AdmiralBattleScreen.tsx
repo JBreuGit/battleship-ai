@@ -18,9 +18,23 @@ import {
 import { AdvancedAiPlayer, TurnEvent, createAdvancedAi } from "@/game/advancedAi";
 import { Difficulty } from "@/game/ai";
 import { coordKey } from "@/game/board";
+import {
+  ABILITY_UNLOCK_LEVELS,
+  STEALTH_UNLOCK_LEVEL,
+  ShipClassId,
+  WeaponTier,
+  campaignLoadout,
+  weaponTierInfo,
+} from "@/game/campaign";
+import { createCampaignAdmiralAi } from "@/game/campaignAi";
 import { randomFleet } from "@/game/placement";
 import { createRng } from "@/game/rng";
-import { Coordinate, FLEET_LENGTHS, ShipPlacement } from "@/game/types";
+import {
+  BOARD_SIZE,
+  Coordinate,
+  FLEET_LENGTHS,
+  ShipPlacement,
+} from "@/game/types";
 import {
   CellMark,
   FleetStatus,
@@ -40,12 +54,13 @@ import { CALLSIGNS, Scoreboard } from "./PlayerAvatar";
 import { ShipId, ShipOverlay } from "./ShipSprite";
 import {
   DamageSmoke,
+  SHIP_NAMES,
   SunkBanner,
   SunkCallout,
   SunkExplosions,
   WreckSmoke,
 } from "./ShotEffects";
-import { SoundControls } from "./useSoundManager";
+import { PlayVariant, SoundControls } from "./useSoundManager";
 
 type EnemyCell =
   | "fog"
@@ -66,6 +81,8 @@ export interface AdmiralSession {
 
 const PLAYER = 0 as const;
 const ENEMY = 1 as const;
+/** Fleet index of the submarine (lengths 5, 4, 3, 3, 2). */
+const SUBMARINE_ID = 3;
 
 /** Build an Admiral-mode session from the player's fleet. */
 export function createAdmiralSession(
@@ -78,6 +95,53 @@ export function createAdmiralSession(
     game: new AdvancedGame([fleet, randomFleet(rng)], rng),
     ai: createAdvancedAi(difficulty, rng),
   };
+}
+
+/**
+ * Build a Battle Commander engagement: Admiral rules where both sides
+ * carry only the abilities the campaign level has unlocked, against the
+ * level-scaled campaign AI.
+ */
+export function createCampaignAdmiralSession(
+  fleet: ShipPlacement[],
+  level: number,
+): AdmiralSession {
+  const rng = createRng(Math.floor(Math.random() * 2 ** 32));
+  const loadout = campaignLoadout(level);
+  return {
+    fleet,
+    game: new AdvancedGame([fleet, randomFleet(rng)], rng, [loadout, loadout]),
+    ai: createCampaignAdmiralAi(level, rng),
+  };
+}
+
+/** Campaign context for a battle: level, fleet weapon tiers, and outcome sink. */
+export interface CampaignBattleConfig {
+  level: number;
+  upgrades: Record<ShipClassId, WeaponTier>;
+  onResult: (won: boolean) => void;
+}
+
+/** Beefier cannon-fire renditions per weapon tier (tier 1 = stock sound). */
+const FIRE_VARIANTS: Record<WeaponTier, PlayVariant | undefined> = {
+  1: undefined,
+  2: { rate: 1.12, layers: 2 },
+  3: { rate: 0.72, gainMul: 1.2, layers: 2 },
+  4: { rate: 0.88, gainMul: 1.15, layers: 3 },
+};
+
+/** The 2×2 heavy-shell cells anchored at (clamped) `cell`. */
+function heavyShellCells(cell: Coordinate): Coordinate[] {
+  const anchor = {
+    x: Math.min(cell.x, BOARD_SIZE - 2),
+    y: Math.min(cell.y, BOARD_SIZE - 2),
+  };
+  return [
+    anchor,
+    { x: anchor.x + 1, y: anchor.y },
+    { x: anchor.x, y: anchor.y + 1 },
+    { x: anchor.x + 1, y: anchor.y + 1 },
+  ];
 }
 
 interface ShotFx {
@@ -143,6 +207,9 @@ export interface AdmiralBattleScreenProps {
   difficulty: Difficulty;
   sound: SoundControls;
   onPlayAgain: () => void;
+  campaign?: CampaignBattleConfig;
+  /** Label for the game-over button (defaults to "Play again"). */
+  playAgainLabel?: string;
 }
 
 export function AdmiralBattleScreen({
@@ -150,6 +217,8 @@ export function AdmiralBattleScreen({
   difficulty,
   sound,
   onPlayAgain,
+  campaign,
+  playAgainLabel,
 }: AdmiralBattleScreenProps) {
   const { game, ai } = session;
   const [enemyGrid, setEnemyGrid] = useState<EnemyCell[][]>(() =>
@@ -180,9 +249,17 @@ export function AdmiralBattleScreen({
   } | null>(null);
   const [winner, setWinner] = useState<Side | null>(null);
   const [notice, setNotice] = useState<string | null>(
-    "Admiral mode — each ship carries one special ability.",
+    campaign
+      ? campaign.level >= ABILITY_UNLOCK_LEVELS["rapid-fire"]
+        ? `Level ${campaign.level} — both fleets carry the abilities your rank has unlocked.`
+        : `Level ${campaign.level} — ship abilities unlock as you rise through the ranks.`
+      : "Admiral mode — each ship carries one special ability.",
   );
   const [arming, setArming] = useState<TargetedAbility | null>(null);
+  /** Ship classes whose once-per-battle weapon special has been fired. */
+  const [usedSpecials, setUsedSpecials] = useState<ShipClassId[]>([]);
+  /** Heavy-shell special armed and waiting for a target cell. */
+  const [heavyArmed, setHeavyArmed] = useState<ShipClassId | null>(null);
   /** True once the player has committed to rapid fire for this turn. */
   const [abilityLock, setAbilityLock] = useState(false);
   const [hoverCell, setHoverCell] = useState<Coordinate | null>(null);
@@ -304,6 +381,10 @@ export function AdmiralBattleScreen({
           }
           return next;
         });
+        if (board === "player") {
+          // A sunk ship loses its armed heavy shell.
+          setHeavyArmed((prev) => (prev === shipId ? null : prev));
+        }
         if (result.sunkShip) {
           const placement = placementFromCells(result.sunkShip);
           setWrecks((prev) => [...prev, { shipId, placement }]);
@@ -326,9 +407,10 @@ export function AdmiralBattleScreen({
       later(GAME_OVER_DELAY, () => {
         setWinner(won ? "player" : "enemy");
         sound.play(won ? "victory" : "defeat");
+        campaign?.onResult(won);
       });
     },
-    [later, sound],
+    [campaign, later, sound],
   );
 
   /** Replay the AI's turn events with staggered timing, then hand back. */
@@ -531,6 +613,98 @@ export function AdmiralBattleScreen({
     [afterPlayerAction, ai, applyShot, game, later, markEnemyIntel, refresh, sound],
   );
 
+  /** Heavy shell special: blanket the 2×2 area anchored at the click. */
+  const handleHeavyShell = useCallback(
+    (shipClass: ShipClassId, cell: Coordinate) => {
+      setHeavyArmed(null);
+      setUsedSpecials((prev) => [...prev, shipClass]);
+      setBusy(true);
+      setNotice("Heavy shell — blanket salvo!");
+      const report = game.fireSalvo(PLAYER, heavyShellCells(cell));
+      sound.play("fire", FIRE_VARIANTS[3]);
+      report.shots.forEach(({ target, result }, i) => {
+        later(300 + i * BARRAGE_STEP, () => {
+          if (i > 0) {
+            sound.play("fire", FIRE_VARIANTS[3]);
+          }
+          applyShot("enemy", target, result);
+        });
+      });
+      afterPlayerAction(300 + report.shots.length * BARRAGE_STEP + 500);
+      refresh();
+    },
+    [afterPlayerAction, applyShot, game, later, refresh, sound],
+  );
+
+  /** Guided shot special: a guaranteed hit on an untouched enemy ship cell. */
+  const handleGuidedShot = useCallback(
+    (shipClass: ShipClassId) => {
+      const board = game.board(ENEMY);
+      const untouched = board
+        .occupiedCells()
+        .filter((c) => !board.hasBeenFiredAt(c));
+      if (untouched.length === 0) {
+        return;
+      }
+      // Avoid the hidden submarine while its silent running could evade.
+      const safe = game.stealthAvailable(ENEMY)
+        ? untouched.filter((c) => board.shipIdAt(c) !== SUBMARINE_ID)
+        : untouched;
+      const pool = safe.length > 0 ? safe : untouched;
+      const cell = pool[Math.floor(Math.random() * pool.length)];
+      setUsedSpecials((prev) => [...prev, shipClass]);
+      setBusy(true);
+      setNotice("Guided shot — radar lock acquired!");
+      const result = game.fireShot(PLAYER, cell);
+      sound.play("fire", FIRE_VARIANTS[4]);
+      later(SHELL_FLIGHT, () => applyShot("enemy", cell, result));
+      afterPlayerAction(SHELL_FLIGHT + 500);
+      refresh();
+    },
+    [afterPlayerAction, applyShot, game, later, refresh, sound],
+  );
+
+  /** Arm or fire a ship class's once-per-battle weapon special. */
+  const handleSpecial = useCallback(
+    (shipClass: ShipClassId, tier: WeaponTier) => {
+      if (busy || winner || turn !== "player" || abilityLock || arming) {
+        return;
+      }
+      if (heavyArmed !== null && tier !== 3) {
+        return;
+      }
+      if (tier === 2) {
+        // Rapid-fire cannon: two shots this turn, no ability use spent.
+        game.boostShots(PLAYER, 2);
+        setUsedSpecials((prev) => [...prev, shipClass]);
+        setAbilityLock(true);
+        sound.play("fire", FIRE_VARIANTS[2]);
+        setNotice("Rapid-fire cannon — two shots this turn!");
+        refresh();
+        return;
+      }
+      if (tier === 3) {
+        setHeavyArmed((prev) => (prev === shipClass ? null : shipClass));
+        sound.play("click");
+        setNotice("Heavy shell armed — pick the corner of the 2×2 blanket.");
+        return;
+      }
+      handleGuidedShot(shipClass);
+    },
+    [
+      abilityLock,
+      arming,
+      busy,
+      game,
+      handleGuidedShot,
+      heavyArmed,
+      refresh,
+      sound,
+      turn,
+      winner,
+    ],
+  );
+
   const handleCellClick = useCallback(
     (cell: Coordinate) => {
       if (busy || winner || turn !== "player") {
@@ -540,12 +714,26 @@ export function AdmiralBattleScreen({
         handleAbilityTarget(arming, cell);
         return;
       }
+      if (heavyArmed !== null) {
+        handleHeavyShell(heavyArmed, cell);
+        return;
+      }
       if (game.board(ENEMY).hasBeenFiredAt(cell)) {
         return;
       }
       handleFire(cell);
     },
-    [arming, busy, game, handleAbilityTarget, handleFire, turn, winner],
+    [
+      arming,
+      busy,
+      game,
+      handleAbilityTarget,
+      handleFire,
+      handleHeavyShell,
+      heavyArmed,
+      turn,
+      winner,
+    ],
   );
 
   const handleAbilityButton = useCallback(
@@ -554,6 +742,7 @@ export function AdmiralBattleScreen({
         busy ||
         winner ||
         abilityLock ||
+        heavyArmed !== null ||
         turn !== "player" ||
         !game.abilityAvailable(PLAYER, kind)
       ) {
@@ -576,17 +765,21 @@ export function AdmiralBattleScreen({
             : "Sonar armed — pick the center of the 5×5 ping.",
       );
     },
-    [abilityLock, busy, game, refresh, turn, winner],
+    [abilityLock, busy, game, heavyArmed, refresh, turn, winner],
   );
 
   const previewCells = new Set<string>(
-    arming && hoverCell
-      ? (arming === "barrage"
-          ? barrageCells(hoverCell)
-          : arming === "sonar"
-            ? sonarArea(hoverCell)
-            : scanArea(hoverCell)
-        ).map(coordKey)
+    hoverCell
+      ? arming
+        ? (arming === "barrage"
+            ? barrageCells(hoverCell)
+            : arming === "sonar"
+              ? sonarArea(hoverCell)
+              : scanArea(hoverCell)
+          ).map(coordKey)
+        : heavyArmed !== null
+          ? heavyShellCells(hoverCell).map(coordKey)
+          : []
       : [],
   );
 
@@ -630,9 +823,61 @@ export function AdmiralBattleScreen({
       <AbilityBar
         game={game}
         arming={arming}
-        disabled={busy || !!winner || abilityLock || turn !== "player"}
+        disabled={
+          busy ||
+          !!winner ||
+          abilityLock ||
+          heavyArmed !== null ||
+          turn !== "player"
+        }
         onUse={handleAbilityButton}
+        campaignLevel={campaign?.level}
       />
+
+      {campaign && (
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-foam-400">
+            Armaments
+          </span>
+          {([0, 1, 2, 3, 4] as const).map((shipClass) => {
+            const tier = campaign.upgrades[shipClass];
+            if (tier < 2) {
+              return null;
+            }
+            const used = usedSpecials.includes(shipClass);
+            const sunkShip = playerSunk.includes(shipClass);
+            const disabled =
+              used ||
+              sunkShip ||
+              busy ||
+              !!winner ||
+              abilityLock ||
+              arming !== null ||
+              (heavyArmed !== null && heavyArmed !== shipClass) ||
+              turn !== "player";
+            const armed = heavyArmed === shipClass;
+            return (
+              <button
+                key={shipClass}
+                type="button"
+                disabled={disabled}
+                onClick={() => handleSpecial(shipClass, tier)}
+                title={weaponTierInfo(tier).description}
+                className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider shadow-btn transition-all duration-150 ease-out active:scale-95 ${
+                  armed
+                    ? "animate-pulse-soft border-amber-cta bg-navy-700 text-amber-cta"
+                    : disabled
+                      ? "cursor-not-allowed border-navy-line/60 bg-navy-900 text-foam-400/40"
+                      : "border-amber-cta/50 bg-navy-800 text-amber-cta hover:-translate-y-0.5"
+                }`}
+              >
+                {SHIP_NAMES[shipClass]} · {weaponTierInfo(tier).name}
+                {used ? " ✓" : armed ? " — pick a target" : ""}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div
         className={`flex w-full flex-col items-center gap-6 transition-[filter] duration-700 lg:flex-row lg:items-start lg:justify-center lg:gap-10 ${
@@ -641,7 +886,11 @@ export function AdmiralBattleScreen({
       >
         <BoardShell
           title={`${PLAYERS.devin.name} waters`}
-          subtitle={`${difficulty} AI · your shots: ${playerShots}`}
+          subtitle={
+            campaign
+              ? `level ${campaign.level} AI · your shots: ${playerShots}`
+              : `${difficulty} AI · your shots: ${playerShots}`
+          }
           tone="navy"
           entranceDelayMs={80}
         >
@@ -669,7 +918,10 @@ export function AdmiralBattleScreen({
                     scanFx.cells.some((c) => c.x === x && c.y === y);
                   const fired = state === "miss" || state === "hit" || state === "sunk";
                   const clickable =
-                    !busy && !winner && turn === "player" && (arming !== null || !fired);
+                    !busy &&
+                    !winner &&
+                    turn === "player" &&
+                    (arming !== null || heavyArmed !== null || !fired);
                   const inPreview = previewCells.has(coordKey({ x, y }));
                   return (
                     <button
@@ -772,7 +1024,7 @@ export function AdmiralBattleScreen({
             player="devin"
           />
           <FleetStatus label={`${PLAYERS.dutch.name} fleet`} sunk={playerSunk} />
-          <StealthStatus game={game} />
+          <StealthStatus game={game} campaignLevel={campaign?.level} />
         </div>
 
         <BoardShell
@@ -848,6 +1100,7 @@ export function AdmiralBattleScreen({
                   shipId={shipId as ShipId}
                   placement={placement}
                   hits={damagedSegments(placement, playerGrid)}
+                  weaponTier={campaign?.upgrades[shipId as ShipClassId]}
                   className="pointer-events-none z-10 animate-ship-bob"
                   style={{
                     animationDelay: `${shipId * 0.55}s`,
@@ -896,6 +1149,7 @@ export function AdmiralBattleScreen({
           playerShots={playerShots}
           enemyShots={enemyShots}
           onPlayAgain={onPlayAgain}
+          actionLabel={playAgainLabel}
         />
       )}
     </div>
@@ -907,17 +1161,24 @@ function AbilityBar({
   arming,
   disabled,
   onUse,
+  campaignLevel,
 }: {
   game: AdvancedGame;
   arming: TargetedAbility | null;
   disabled: boolean;
   onUse: (kind: AbilityKind) => void;
+  /** When set (Battle Commander), abilities below their level show as locked. */
+  campaignLevel?: number;
 }) {
   return (
     <div className="flex w-full max-w-3xl flex-wrap items-stretch justify-center gap-2">
       {ABILITY_INFO.map(({ kind, label, ship, blurb }) => {
+        const locked =
+          campaignLevel !== undefined &&
+          campaignLevel < ABILITY_UNLOCK_LEVELS[kind];
         const uses = game.usesLeft(PLAYER, kind);
-        const available = !disabled && game.abilityAvailable(PLAYER, kind);
+        const available =
+          !locked && !disabled && game.abilityAvailable(PLAYER, kind);
         const armed = arming === kind;
         return (
           <button
@@ -939,11 +1200,13 @@ function AbilityBar({
                 {label}
               </span>
               <span className="rounded-full bg-navy-950/60 px-1.5 text-[10px] font-semibold">
-                ×{uses}
+                {locked ? "locked" : `×${uses}`}
               </span>
             </span>
             <span className="mt-0.5 block text-[10px] opacity-70">
-              {ship} — {blurb}
+              {locked
+                ? `${ship} — unlocks at level ${ABILITY_UNLOCK_LEVELS[kind]}`
+                : `${ship} — ${blurb}`}
             </span>
           </button>
         );
@@ -952,20 +1215,34 @@ function AbilityBar({
   );
 }
 
-function StealthStatus({ game }: { game: AdvancedGame }) {
+function StealthStatus({
+  game,
+  campaignLevel,
+}: {
+  game: AdvancedGame;
+  campaignLevel?: number;
+}) {
+  const locked =
+    campaignLevel !== undefined && campaignLevel < STEALTH_UNLOCK_LEVEL;
   return (
     <div className="radar-panel animate-rise-in rounded-2xl border border-navy-line/70 bg-navy-900/85 p-3 shadow-panel">
       <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-foam-400">
         Silent running
       </p>
-      <ul className="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wider">
-        <li className={game.stealthAvailable(PLAYER) ? "text-foam-300" : "text-foam-400/40"}>
-          Your sub: {game.stealthAvailable(PLAYER) ? "ready" : "expended"}
-        </li>
-        <li className={game.stealthAvailable(ENEMY) ? "text-foam-300" : "text-foam-400/40"}>
-          Enemy sub: {game.stealthAvailable(ENEMY) ? "ready" : "expended"}
-        </li>
-      </ul>
+      {locked ? (
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-foam-400/40">
+          Unlocks at level {STEALTH_UNLOCK_LEVEL}
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wider">
+          <li className={game.stealthAvailable(PLAYER) ? "text-foam-300" : "text-foam-400/40"}>
+            Your sub: {game.stealthAvailable(PLAYER) ? "ready" : "expended"}
+          </li>
+          <li className={game.stealthAvailable(ENEMY) ? "text-foam-300" : "text-foam-400/40"}>
+            Enemy sub: {game.stealthAvailable(ENEMY) ? "ready" : "expended"}
+          </li>
+        </ul>
+      )}
     </div>
   );
 }

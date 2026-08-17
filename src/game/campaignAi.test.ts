@@ -1,13 +1,22 @@
+import { AdvancedGame, AdvancedRuleError } from "./advanced";
 import { createAi } from "./ai";
 import { Board, coordKey } from "./board";
 import {
+  ABILITY_UNLOCK_LEVELS,
+  STEALTH_UNLOCK_LEVEL,
+  campaignLoadout,
+} from "./campaign";
+import {
   CAMPAIGN_LEVELS,
   campaignParams,
+  createCampaignAdmiralAi,
   createCampaignAi,
 } from "./campaignAi";
 import { randomFleet } from "./placement";
 import { createRng } from "./rng";
 import { Coordinate } from "./types";
+import type { AbilityKind } from "./advanced";
+import type { TurnEvent } from "./advancedAi";
 import type { AiPlayer } from "./ai";
 
 function playToCompletion(ai: AiPlayer, board: Board): Coordinate[] {
@@ -113,3 +122,95 @@ describe("campaign difficulty curve", () => {
     expect(level20).toBeLessThanOrEqual(hard + 1);
   });
 });
+
+/** Fixture fleet on even rows (see advanced.test.ts); sub sits at y=6. */
+function fixtureFleet() {
+  return [
+    { bow: { x: 0, y: 0 }, length: 5, orientation: "horizontal" as const },
+    { bow: { x: 0, y: 2 }, length: 4, orientation: "horizontal" as const },
+    { bow: { x: 0, y: 4 }, length: 3, orientation: "horizontal" as const },
+    { bow: { x: 0, y: 6 }, length: 3, orientation: "horizontal" as const },
+    { bow: { x: 0, y: 8 }, length: 2, orientation: "horizontal" as const },
+  ];
+}
+
+function campaignGame(level: number, seed = 1): AdvancedGame {
+  const loadout = campaignLoadout(level);
+  return new AdvancedGame([fixtureFleet(), fixtureFleet()], createRng(seed), [
+    loadout,
+    loadout,
+  ]);
+}
+
+describe("campaign Admiral loadouts in the engine", () => {
+  const KINDS = Object.keys(ABILITY_UNLOCK_LEVELS) as AbilityKind[];
+
+  it("locks every active ability for both sides below its unlock level", () => {
+    const game = campaignGame(1);
+    for (const kind of KINDS) {
+      expect(game.abilityAvailable(0, kind)).toBe(false);
+      expect(game.abilityAvailable(1, kind)).toBe(false);
+    }
+    expect(() => game.useRapidFire(0)).toThrow(AdvancedRuleError);
+    expect(() => game.useSonar(0, { x: 5, y: 5 })).toThrow(AdvancedRuleError);
+  });
+
+  it("arms an ability for both sides once its level is reached", () => {
+    for (const kind of KINDS) {
+      const game = campaignGame(ABILITY_UNLOCK_LEVELS[kind]);
+      expect(game.abilityAvailable(0, kind)).toBe(true);
+      expect(game.abilityAvailable(1, kind)).toBe(true);
+    }
+  });
+
+  it("silent running only protects the submarine once unlocked", () => {
+    const before = campaignGame(STEALTH_UNLOCK_LEVEL - 1);
+    expect(before.stealthAvailable(0)).toBe(false);
+    expect(before.stealthAvailable(1)).toBe(false);
+    expect(before.fireShot(0, { x: 0, y: 6 }).outcome).toBe("hit");
+
+    const after = campaignGame(STEALTH_UNLOCK_LEVEL);
+    expect(after.stealthAvailable(1)).toBe(true);
+    expect(after.fireShot(0, { x: 0, y: 6 }).outcome).toBe("evaded");
+  });
+});
+
+describe.each([1, 4, 10, 20])(
+  "campaign Admiral AI at level %i",
+  (level) => {
+    it("finishes games using only unlocked abilities", () => {
+      const loadout = campaignLoadout(level);
+      for (let seed = 0; seed < 3; seed++) {
+        const rng = createRng(seed * 101 + 7);
+        const game = new AdvancedGame(
+          [randomFleet(rng), randomFleet(rng)],
+          rng,
+          [loadout, loadout],
+        );
+        const ais = [
+          createCampaignAdmiralAi(level, rng),
+          createCampaignAdmiralAi(level, rng),
+        ];
+        const abilityKinds = new Set<string>();
+        for (let turn = 0; turn < 500 && game.winner === null; turn++) {
+          const me = game.currentTurn;
+          const events: TurnEvent[] = ais[me].takeTurn(game, me);
+          for (const event of events) {
+            if (event.kind !== "shot") {
+              abilityKinds.add(event.kind);
+            }
+          }
+        }
+        expect(game.winner).not.toBeNull();
+        for (const kind of abilityKinds) {
+          expect(level).toBeGreaterThanOrEqual(
+            ABILITY_UNLOCK_LEVELS[kind as AbilityKind],
+          );
+        }
+        if (level === 20) {
+          expect(abilityKinds.size).toBeGreaterThan(0);
+        }
+      }
+    });
+  },
+);
