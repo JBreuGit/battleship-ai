@@ -584,10 +584,21 @@ body {
 @keyframes ship-bob {
   0%,
   100% {
-    transform: translateY(0);
+    transform: translateY(0) rotate(-0.35deg);
   }
   50% {
-    transform: translateY(1.5px);
+    transform: translateY(1.6px) rotate(0.4deg);
+  }
+}
+
+@keyframes wreck-settle {
+  from {
+    transform: rotate(0deg) translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: rotate(var(--list, 2.2deg)) translateY(4%);
+    opacity: 0.78;
   }
 }
 
@@ -657,6 +668,12 @@ body {
 
 .animate-sunk-bounce {
   animation: sunk-bounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.animate-wreck-settle {
+  animation:
+    sunk-bounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    wreck-settle 1.5s ease-out 0.55s both;
 }
 
 .animate-board-shake {
