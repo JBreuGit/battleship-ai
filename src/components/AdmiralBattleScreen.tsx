@@ -318,7 +318,7 @@ export function AdmiralBattleScreen({
       }
       refresh();
     },
-    [markEnemy, refresh, sound],
+    [game, markEnemy, refresh, sound],
   );
 
   const finishGame = useCallback(
