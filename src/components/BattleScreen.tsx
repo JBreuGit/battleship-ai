@@ -319,6 +319,14 @@ export function BattleScreen({
                 : "Your turn — fire at Devin AI's grid"
               : `${PLAYERS.devin.name} is firing…`
         }
+        hitFlash={
+          fx && fx.outcome !== "miss"
+            ? {
+                player: fx.board === "enemy" ? "dutch" : "devin",
+                seq: fx.seq,
+              }
+            : null
+        }
       />
 
       <div

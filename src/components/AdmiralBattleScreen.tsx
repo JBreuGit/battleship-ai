@@ -610,6 +610,14 @@ export function AdmiralBattleScreen({
                 : "Your turn — fire, or use a ship's ability"
               : `${PLAYERS.devin.name} is maneuvering…`
         }
+        hitFlash={
+          fx && fx.outcome !== "miss" && fx.outcome !== "evaded"
+            ? {
+                player: fx.board === "enemy" ? "dutch" : "devin",
+                seq: fx.seq,
+              }
+            : null
+        }
       />
 
       <p
