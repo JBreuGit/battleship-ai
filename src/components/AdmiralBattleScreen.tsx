@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  CSSProperties,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   AbilityKind,
   AdvancedGame,
@@ -18,9 +24,12 @@ import { Coordinate, FLEET_LENGTHS, ShipPlacement } from "@/game/types";
 import {
   CellMark,
   FleetStatus,
+  PlayerCell,
   ShotOverlay,
   Side,
   Wreck,
+  damagedCells,
+  damagedSegments,
   makeGrid,
   placementFromCells,
 } from "./BattleScreen";
@@ -29,6 +38,7 @@ import { GameOverModal } from "./GameOverModal";
 import { PLAYERS, Scoreboard } from "./PlayerBadge";
 import { ShipId, ShipOverlay } from "./ShipSprite";
 import {
+  DamageSmoke,
   SunkBanner,
   SunkCallout,
   SunkExplosions,
@@ -45,7 +55,6 @@ type EnemyCell =
   | "suspect"
   | "revealed"
   | "evaded";
-type PlayerCell = "water" | "ship" | "miss" | "hit" | "sunk";
 type TargetedAbility = "recon" | "sonar" | "barrage";
 
 export interface AdmiralSession {
@@ -714,7 +723,12 @@ export function AdmiralBattleScreen({
                 placement={wreck.placement}
                 variant="sunk"
                 player="devin"
-                className="pointer-events-none z-10 animate-sunk-bounce opacity-90"
+                className="pointer-events-none z-10 animate-wreck-settle"
+                style={
+                  {
+                    "--list": wreck.shipId % 2 ? "-2.2deg" : "2.4deg",
+                  } as CSSProperties
+                }
               />
             ))}
             {enemyWrecks.map((wreck) => (
@@ -808,22 +822,36 @@ export function AdmiralBattleScreen({
                 }),
               )}
             </div>
-            {session.fleet.map((placement, shipId) => (
-              <ShipOverlay
-                key={shipId}
-                shipId={shipId as ShipId}
-                placement={placement}
-                className="pointer-events-none z-10 animate-ship-bob"
-                style={{ animationDelay: `${shipId * 0.55}s` }}
-              />
-            ))}
+            {session.fleet.map((placement, shipId) =>
+              playerSunk.includes(shipId) ? null : (
+                <ShipOverlay
+                  key={shipId}
+                  shipId={shipId as ShipId}
+                  placement={placement}
+                  hits={damagedSegments(placement, playerGrid)}
+                  className="pointer-events-none z-10 animate-ship-bob"
+                  style={{
+                    animationDelay: `${shipId * 0.55}s`,
+                    animationDuration: `${3.3 + shipId * 0.4}s`,
+                  }}
+                />
+              ),
+            )}
+            <DamageSmoke
+              cells={damagedCells(session.fleet, playerSunk, playerGrid)}
+            />
             {playerWrecks.map((wreck) => (
               <ShipOverlay
                 key={`wreck-${wreck.shipId}`}
                 shipId={wreck.shipId}
                 placement={wreck.placement}
                 variant="sunk"
-                className="pointer-events-none z-10 animate-sunk-bounce"
+                className="pointer-events-none z-10 animate-wreck-settle"
+                style={
+                  {
+                    "--list": wreck.shipId % 2 ? "-2.2deg" : "2.4deg",
+                  } as CSSProperties
+                }
               />
             ))}
             {playerWrecks.map((wreck) => (

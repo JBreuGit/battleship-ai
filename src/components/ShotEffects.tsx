@@ -164,6 +164,22 @@ export function WreckSmoke({ placement }: { placement: ShipPlacement }) {
   );
 }
 
+/** Thin smoke wisps rising from damaged (hit, not yet sunk) ship segments. */
+export function DamageSmoke({ cells }: { cells: Coordinate[] }) {
+  return (
+    <span className="pointer-events-none absolute inset-0 z-20" aria-hidden>
+      {cells.map((cell, i) => (
+        <span key={coKey(cell)} className="absolute" style={cellRect(cell)}>
+          <span
+            className="animate-smoke-wisp absolute bottom-[40%] left-1/2 h-[38%] w-[38%] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(140,144,152,0.42)_0%,rgba(64,68,76,0.26)_55%,rgba(30,32,38,0)_78%)]"
+            style={{ animationDelay: `${(i % 4) * 1.05}s`, animationDuration: "5.2s" }}
+          />
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export interface SunkCallout {
   shipId: ShipId;
   attacker: PlayerId;

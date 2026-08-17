@@ -1,8 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  CSSProperties,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { AiPlayer, Difficulty, createAi } from "@/game/ai";
-import { Board, coordKey } from "@/game/board";
+import { Board, coordKey, shipCells } from "@/game/board";
 import { randomFleet } from "@/game/placement";
 import { createRng } from "@/game/rng";
 import {
@@ -18,6 +24,7 @@ import { GameOverModal } from "./GameOverModal";
 import { PLAYERS, PlayerId, Scoreboard } from "./PlayerBadge";
 import { ShipId, ShipOverlay, ShipSprite } from "./ShipSprite";
 import {
+  DamageSmoke,
   ExplosionEffect,
   SplashEffect,
   SunkBanner,
@@ -28,7 +35,7 @@ import {
 import { SoundControls } from "./useSound";
 
 type EnemyCell = "fog" | "miss" | "hit" | "sunk";
-type PlayerCell = "water" | "ship" | "miss" | "hit" | "sunk";
+export type PlayerCell = "water" | "ship" | "miss" | "hit" | "sunk";
 export type Side = "player" | "enemy";
 
 export interface Session {
@@ -359,7 +366,12 @@ export function BattleScreen({
                 placement={wreck.placement}
                 variant="sunk"
                 player="devin"
-                className="pointer-events-none z-10 animate-sunk-bounce opacity-90"
+                className="pointer-events-none z-10 animate-wreck-settle"
+                style={
+                  {
+                    "--list": wreck.shipId % 2 ? "-2.2deg" : "2.4deg",
+                  } as CSSProperties
+                }
               />
             ))}
             {enemyWrecks.map((wreck) => (
@@ -430,22 +442,34 @@ export function BattleScreen({
                 }),
               )}
             </div>
-            {session.fleet.map((placement, shipId) => (
-              <ShipOverlay
-                key={shipId}
-                shipId={shipId as ShipId}
-                placement={placement}
-                className="pointer-events-none z-10 animate-ship-bob"
-                style={{ animationDelay: `${shipId * 0.55}s` }}
-              />
-            ))}
+            {session.fleet.map((placement, shipId) =>
+              playerSunk.includes(shipId) ? null : (
+                <ShipOverlay
+                  key={shipId}
+                  shipId={shipId as ShipId}
+                  placement={placement}
+                  hits={damagedSegments(placement, playerGrid)}
+                  className="pointer-events-none z-10 animate-ship-bob"
+                  style={{
+                    animationDelay: `${shipId * 0.55}s`,
+                    animationDuration: `${3.3 + shipId * 0.4}s`,
+                  }}
+                />
+              ),
+            )}
+            <DamageSmoke cells={damagedCells(session.fleet, playerSunk, playerGrid)} />
             {playerWrecks.map((wreck) => (
               <ShipOverlay
                 key={`wreck-${wreck.shipId}`}
                 shipId={wreck.shipId}
                 placement={wreck.placement}
                 variant="sunk"
-                className="pointer-events-none z-10 animate-sunk-bounce"
+                className="pointer-events-none z-10 animate-wreck-settle"
+                style={
+                  {
+                    "--list": wreck.shipId % 2 ? "-2.2deg" : "2.4deg",
+                  } as CSSProperties
+                }
               />
             ))}
             {playerWrecks.map((wreck) => (
@@ -474,6 +498,29 @@ export function BattleScreen({
         />
       )}
     </div>
+  );
+}
+
+/** Hit (not sunk) segment indices along a ship, from the owner's grid. */
+export function damagedSegments(
+  placement: ShipPlacement,
+  grid: PlayerCell[][],
+): number[] {
+  return shipCells(placement).flatMap((cell, i) =>
+    grid[cell.y][cell.x] === "hit" ? [i] : [],
+  );
+}
+
+/** Board cells of live (unsunk) ships that have taken a hit. */
+export function damagedCells(
+  fleet: ShipPlacement[],
+  sunk: number[],
+  grid: PlayerCell[][],
+): Coordinate[] {
+  return fleet.flatMap((placement, shipId) =>
+    sunk.includes(shipId)
+      ? []
+      : shipCells(placement).filter((cell) => grid[cell.y][cell.x] === "hit"),
   );
 }
 
