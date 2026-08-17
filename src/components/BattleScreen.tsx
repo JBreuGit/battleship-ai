@@ -25,7 +25,7 @@ import {
 import { BoardShell } from "./BoardShell";
 import { GameOverModal } from "./GameOverModal";
 import { PLAYERS, PlayerId } from "./PlayerBadge";
-import { Scoreboard } from "./PlayerAvatar";
+import { CALLSIGNS, Scoreboard } from "./PlayerAvatar";
 import { ShipId, ShipOverlay, ShipSprite } from "./ShipSprite";
 import {
   DamageSmoke,
@@ -614,7 +614,7 @@ export function BattleScreen({
         </div>
 
         <BoardShell
-          title={`${PLAYERS.dutch.name} grid`}
+          title={`${CALLSIGNS.dutch}'s grid`}
           subtitle={`enemy shots: ${enemyShots}`}
           tone="paper"
           entranceDelayMs={320}

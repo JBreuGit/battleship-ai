@@ -11,6 +11,7 @@ import {
   totalLosses,
   totalWins,
 } from "@/game/campaign";
+import { CALLSIGNS } from "./PlayerAvatar";
 import { RankedAvatarBadge } from "./RankInsigniaOverlay";
 import { SoundControls } from "./useSoundManager";
 import { WeaponUpgradeCard } from "./WeaponUpgradeCard";
@@ -82,6 +83,9 @@ export function ArmoryScreen({
             Dutch Navy · Commanding Officer
           </p>
           <p className="truncate font-display text-xl font-extrabold tracking-wide text-foam-100">
+            {CALLSIGNS.dutch}
+          </p>
+          <p className="font-mono text-[11px] uppercase tracking-widest text-amber-cta">
             {rank.title}
           </p>
           <p className="mt-0.5 font-mono text-[11px] text-foam-300">

@@ -36,7 +36,7 @@ import {
 import { BoardShell } from "./BoardShell";
 import { GameOverModal } from "./GameOverModal";
 import { PLAYERS } from "./PlayerBadge";
-import { Scoreboard } from "./PlayerAvatar";
+import { CALLSIGNS, Scoreboard } from "./PlayerAvatar";
 import { ShipId, ShipOverlay } from "./ShipSprite";
 import {
   DamageSmoke,
@@ -776,7 +776,7 @@ export function AdmiralBattleScreen({
         </div>
 
         <BoardShell
-          title={`${PLAYERS.dutch.name} grid`}
+          title={`${CALLSIGNS.dutch}'s grid`}
           subtitle={`enemy shots: ${enemyShots}`}
           tone="paper"
           entranceDelayMs={320}

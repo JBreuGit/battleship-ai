@@ -3,6 +3,7 @@
 import confetti from "canvas-confetti";
 import { useEffect } from "react";
 import { RankInfo, rankIndexForLevel } from "@/game/campaign";
+import { CALLSIGNS } from "./PlayerAvatar";
 import { RankedAvatarBadge } from "./RankInsigniaOverlay";
 import { SoundControls } from "./useSoundManager";
 
@@ -54,7 +55,7 @@ export function PromotionModal({
       />
       <div className="animate-rise-in w-full max-w-sm rounded-2xl border border-amber-cta/50 bg-navy-900 p-8 text-center shadow-panel shadow-glow-amber">
         <p className="font-mono text-[10px] uppercase tracking-widest text-amber-cta">
-          Field promotion · Dutch Navy
+          Field promotion · {CALLSIGNS.dutch}
         </p>
         <div className="mt-4 flex justify-center">
           <RankedAvatarBadge level={level} size="xl" pinOn />
@@ -64,8 +65,8 @@ export function PromotionModal({
         </p>
         <p className="mt-2 text-sm text-foam-300">
           {flagOfficer
-            ? "The fleet salutes you. Your command now carries flag-officer authority."
-            : "Outstanding seamanship, commander. New insignia have been pinned to your uniform."}
+            ? `The fleet salutes you, ${CALLSIGNS.dutch}. Your command now carries flag-officer authority.`
+            : `Outstanding seamanship, ${CALLSIGNS.dutch}. New insignia have been pinned to your uniform.`}
         </p>
         <button
           type="button"

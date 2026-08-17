@@ -20,6 +20,7 @@ import {
 } from "@/game/types";
 import { BattleCommanderModeCard } from "./BattleCommanderModeCard";
 import { BoardShell } from "./BoardShell";
+import { CALLSIGNS } from "./PlayerAvatar";
 import { ShipId, ShipOverlay, ShipSprite } from "./ShipSprite";
 import { SoundControls } from "./useSoundManager";
 
@@ -358,7 +359,11 @@ export function PlacementScreen({
 
   return (
     <div className="flex w-full flex-col items-center gap-6 pb-24 sm:pb-0 lg:flex-row lg:items-start lg:justify-center lg:gap-10">
-      <BoardShell title="Your grid" subtitle="Deploy fleet" tone="paper">
+      <BoardShell
+        title={`${CALLSIGNS.dutch}'s grid`}
+        subtitle="Deploy fleet"
+        tone="paper"
+      >
         <div className="relative">
           <div
             ref={boardRef}
@@ -506,8 +511,8 @@ export function PlacementScreen({
               Engagement {campaign.level} of 20
             </h2>
             <p className="mt-1 text-xs text-foam-300">
-              {campaign.rankTitle} — deploy your fleet, then engage Devin
-              AI&apos;s level {campaign.level} tactics.
+              {CALLSIGNS.dutch} · {campaign.rankTitle} — deploy your fleet,
+              then engage Devin AI&apos;s level {campaign.level} tactics.
             </p>
           </div>
         )}
