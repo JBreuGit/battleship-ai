@@ -1,0 +1,317 @@
+import { describe, expect, it } from "vitest";
+import { coordKey } from "@/game/board";
+import { ABILITY_UNLOCK_LEVELS, ShipClassId, WeaponTier } from "@/game/campaign";
+import { randomFleet } from "@/game/placement";
+import { PlayerAction, StartRequest, WireEvent } from "@/game/protocol";
+import { createRng } from "@/game/rng";
+import { Coordinate } from "@/game/types";
+import {
+  ENEMY,
+  GameRecord,
+  GameRequestError,
+  PLAYER,
+  act,
+  createRecord,
+  parseAction,
+  parseStartRequest,
+  publicState,
+  replay,
+} from "./engine";
+
+const fleet = randomFleet(createRng(7));
+
+function start(overrides: Partial<StartRequest> = {}): GameRecord {
+  return createRecord(
+    { mode: "classic", difficulty: "easy", fleet, ...overrides },
+    "game-1",
+    12345,
+  );
+}
+
+const tiers = (t: WeaponTier): Record<ShipClassId, WeaponTier> => ({
+  0: t,
+  1: t,
+  2: t,
+  3: t,
+  4: t,
+});
+
+function campaign(level: number, tier: WeaponTier = 1): GameRecord {
+  return start({ mode: "campaign", level, upgrades: tiers(tier) });
+}
+
+/** Cells of the hidden enemy fleet — test-only, read straight off the engine. */
+function enemyCells(record: GameRecord): Set<string> {
+  return new Set(replay(record).game.board(ENEMY).occupiedCells().map(coordKey));
+}
+
+function allCells(): Coordinate[] {
+  const cells: Coordinate[] = [];
+  for (let y = 0; y < 10; y++) {
+    for (let x = 0; x < 10; x++) {
+      cells.push({ x, y });
+    }
+  }
+  return cells;
+}
+
+const expectIllegal = (fn: () => unknown, code = "illegal-action") => {
+  try {
+    fn();
+  } catch (error) {
+    expect(error).toBeInstanceOf(GameRequestError);
+    expect((error as GameRequestError).code).toBe(code);
+    return;
+  }
+  throw new Error("expected a GameRequestError");
+};
+
+describe("parseStartRequest", () => {
+  it("accepts a valid classic request", () => {
+    const parsed = parseStartRequest({ mode: "classic", difficulty: "hard", fleet });
+    expect(parsed).toEqual({ mode: "classic", difficulty: "hard", fleet });
+  });
+
+  it("rejects unknown modes, difficulties and malformed bodies", () => {
+    expectIllegal(() => parseStartRequest(null), "bad-request");
+    expectIllegal(
+      () => parseStartRequest({ mode: "god", difficulty: "easy", fleet }),
+      "bad-request",
+    );
+    expectIllegal(
+      () => parseStartRequest({ mode: "classic", difficulty: "trivial", fleet }),
+      "bad-request",
+    );
+  });
+
+  it("rejects fleets that break placement rules", () => {
+    const touching = [
+      { bow: { x: 0, y: 0 }, length: 5, orientation: "horizontal" },
+      { bow: { x: 0, y: 1 }, length: 4, orientation: "horizontal" },
+      { bow: { x: 0, y: 3 }, length: 3, orientation: "horizontal" },
+      { bow: { x: 0, y: 5 }, length: 3, orientation: "horizontal" },
+      { bow: { x: 0, y: 7 }, length: 2, orientation: "horizontal" },
+    ];
+    expectIllegal(
+      () => parseStartRequest({ mode: "classic", difficulty: "easy", fleet: touching }),
+      "invalid-fleet",
+    );
+    expectIllegal(
+      () =>
+        parseStartRequest({
+          mode: "classic",
+          difficulty: "easy",
+          fleet: [{ bow: { x: 99, y: 0 }, length: 5, orientation: "horizontal" }],
+        }),
+      "invalid-fleet",
+    );
+    expectIllegal(
+      () => parseStartRequest({ mode: "classic", difficulty: "easy", fleet: "x" }),
+      "invalid-fleet",
+    );
+  });
+
+  it("requires a valid level and full upgrade map for campaign battles", () => {
+    expectIllegal(
+      () => parseStartRequest({ mode: "campaign", difficulty: "easy", fleet }),
+      "bad-request",
+    );
+    expectIllegal(
+      () =>
+        parseStartRequest({
+          mode: "campaign",
+          difficulty: "easy",
+          fleet,
+          level: 21,
+          upgrades: tiers(1),
+        }),
+      "bad-request",
+    );
+    expectIllegal(
+      () =>
+        parseStartRequest({
+          mode: "campaign",
+          difficulty: "easy",
+          fleet,
+          level: 3,
+          upgrades: { ...tiers(1), 4: 9 },
+        }),
+      "bad-request",
+    );
+    const ok = parseStartRequest({
+      mode: "campaign",
+      difficulty: "easy",
+      fleet,
+      level: 3,
+      upgrades: tiers(2),
+    });
+    expect(ok.level).toBe(3);
+    expect(ok.upgrades).toEqual(tiers(2));
+  });
+});
+
+describe("parseAction", () => {
+  it("rejects off-board and malformed coordinates", () => {
+    expectIllegal(() => parseAction({ type: "fire", target: { x: 10, y: 0 } }), "bad-request");
+    expectIllegal(() => parseAction({ type: "fire", target: { x: 1.5, y: 0 } }), "bad-request");
+    expectIllegal(() => parseAction({ type: "fire", target: "0,0" }), "bad-request");
+    expectIllegal(() => parseAction({ type: "nuke" }), "bad-request");
+    expectIllegal(() => parseAction({ type: "heavy", ship: 7, cell: { x: 0, y: 0 } }), "bad-request");
+  });
+
+  it("strips unknown fields", () => {
+    expect(
+      parseAction({ type: "fire", target: { x: 2, y: 3, hit: true }, forge: "win" }),
+    ).toEqual({ type: "fire", target: { x: 2, y: 3 } });
+  });
+});
+
+describe("act", () => {
+  it("resolves shots against the hidden fleet and runs the AI reply", () => {
+    const record = start();
+    const hidden = enemyCells(record);
+    const target = allCells().find((c) => hidden.has(coordKey(c)))!;
+    const outcome = act(record, { type: "fire", target });
+    expect(outcome.you).toHaveLength(1);
+    const shot = outcome.you[0];
+    expect(shot.kind).toBe("shot");
+    if (shot.kind === "shot") {
+      expect(["hit", "sunk", "fleet-sunk"]).toContain(shot.result.outcome);
+    }
+    expect(outcome.enemy.length).toBeGreaterThanOrEqual(1);
+    expect(outcome.state.turn).toBe(PLAYER);
+    expect(outcome.state.actionIndex).toBe(1);
+    expect(outcome.record.actions).toEqual([{ type: "fire", target }]);
+  });
+
+  it("misses are misses regardless of what the client claims", () => {
+    const record = start();
+    const hidden = enemyCells(record);
+    const target = allCells().find((c) => !hidden.has(coordKey(c)))!;
+    const forged = { type: "fire", target, result: { outcome: "sunk" } } as PlayerAction;
+    const outcome = act(record, forged);
+    expect(outcome.you[0]).toMatchObject({ kind: "shot", result: { outcome: "miss" } });
+  });
+
+  it("rejects firing at a square twice", () => {
+    const record = start();
+    const target = { x: 0, y: 0 };
+    const next = act(record, { type: "fire", target }).record;
+    expectIllegal(() => act(next, { type: "fire", target }));
+  });
+
+  it("rejects Admiral abilities in classic mode and specials outside campaign", () => {
+    const record = start();
+    expectIllegal(() => act(record, { type: "rapid-fire" }));
+    expectIllegal(() => act(record, { type: "recon", center: { x: 4, y: 4 } }));
+    expectIllegal(() => act(record, { type: "boost", ship: 4 }));
+    expectIllegal(() => act(record, { type: "guided", ship: 0 }));
+  });
+
+  it("rejects locked campaign abilities and allows unlocked ones", () => {
+    const locked = campaign(ABILITY_UNLOCK_LEVELS["rapid-fire"] - 1);
+    expectIllegal(() => act(locked, { type: "rapid-fire" }));
+    expect(publicState(replay(locked), locked).abilityAvailable["rapid-fire"]).toBe(false);
+
+    const unlocked = campaign(ABILITY_UNLOCK_LEVELS["rapid-fire"]);
+    const outcome = act(unlocked, { type: "rapid-fire" });
+    expect(outcome.you).toEqual([{ kind: "rapid-fire" }]);
+    expect(outcome.state.shotsRemaining).toBe(2);
+    expect(outcome.enemy).toEqual([]);
+    expect(outcome.state.uses["rapid-fire"]).toBe(1);
+  });
+
+  it("rejects weapon specials the ship does not carry, and double use", () => {
+    const record = campaign(5, 2);
+    expectIllegal(() => act(record, { type: "heavy", ship: 1, cell: { x: 0, y: 0 } }));
+    expectIllegal(() => act(record, { type: "guided", ship: 1 }));
+    const boosted = act(record, { type: "boost", ship: 1 });
+    expect(boosted.state.shotsRemaining).toBe(2);
+    expect(boosted.state.usedSpecials).toEqual([1]);
+    expectIllegal(() => act(boosted.record, { type: "boost", ship: 1 }));
+    expectIllegal(() => act(boosted.record, { type: "boost", ship: 2 }), "illegal-action");
+  });
+
+  it("heavy shell blankets a 2x2 and guided shot always hits", () => {
+    const heavy = act(campaign(9, 3), { type: "heavy", ship: 0, cell: { x: 9, y: 9 } });
+    const salvo = heavy.you[0];
+    expect(salvo.kind).toBe("barrage");
+    if (salvo.kind === "barrage") {
+      expect(salvo.report.shots.map((s) => coordKey(s.target)).sort()).toEqual(
+        ["8,8", "9,8", "8,9", "9,9"].sort(),
+      );
+    }
+
+    const record = campaign(12, 4);
+    const hidden = enemyCells(record);
+    const guided = act(record, { type: "guided", ship: 2 });
+    const shot = guided.you[0];
+    expect(shot.kind).toBe("shot");
+    if (shot.kind === "shot") {
+      expect(hidden.has(coordKey(shot.target))).toBe(true);
+      expect(shot.result.outcome).not.toBe("miss");
+    }
+  });
+
+  it("is deterministic under replay", () => {
+    let record = start({ difficulty: "hard" });
+    const transcript: WireEvent[][] = [];
+    for (const target of allCells().slice(0, 12)) {
+      const outcome = act(record, { type: "fire", target });
+      transcript.push([...outcome.you, ...outcome.enemy]);
+      record = outcome.record;
+      if (outcome.state.winner !== null) break;
+    }
+    // Replaying the final record must reproduce the same AI shots.
+    const live = replay(record);
+    expect(live.game.shotsFired(PLAYER)).toBe(record.actions.length);
+    const again = act({ ...record, actions: record.actions.slice(0, -1) }, record.actions.at(-1)!);
+    expect([...again.you, ...again.enemy]).toEqual(transcript.at(-1));
+  });
+
+  it("plays a full classic game to a winner and then refuses more actions", () => {
+    let record = start({ difficulty: "easy" });
+    const hidden = enemyCells(record);
+    const targets = allCells().filter((c) => hidden.has(coordKey(c)));
+    let winner = null;
+    for (const target of targets) {
+      const outcome = act(record, { type: "fire", target });
+      record = outcome.record;
+      winner = outcome.state.winner;
+      if (winner !== null) break;
+    }
+    expect(winner).not.toBeNull();
+    expectIllegal(() => act(record, { type: "fire", target: { x: 0, y: 0 } }));
+  });
+
+  it("never leaks unrevealed enemy coordinates in events or state", () => {
+    const record = start({ difficulty: "medium" });
+    const outcome = act(record, { type: "fire", target: { x: 5, y: 5 } });
+    const serialized = JSON.stringify({
+      you: outcome.you,
+      enemy: outcome.enemy,
+      state: outcome.state,
+    });
+    expect(serialized).not.toContain("seed");
+    expect(serialized).not.toContain("occupied");
+    expect(Object.keys(outcome.state).sort()).toEqual(
+      [
+        "turn",
+        "winner",
+        "shotsRemaining",
+        "shotsFired",
+        "uses",
+        "abilityAvailable",
+        "stealth",
+        "usedSpecials",
+        "actionIndex",
+      ].sort(),
+    );
+    // Any enemy coordinate present must be one the player fired at.
+    for (const event of outcome.you) {
+      if (event.kind === "shot" && event.result.outcome === "miss") {
+        expect(coordKey(event.target)).toBe("5,5");
+      }
+    }
+  });
+});
