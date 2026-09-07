@@ -15,8 +15,7 @@ import {
 import { AiPlayer, Difficulty, createAi } from "@/game/ai";
 import { Board, isOnBoard } from "@/game/board";
 import {
-  CAMPAIGN_LEVELS,
-  MAX_WEAPON_TIER,
+  CampaignState,
   SHIP_CLASS_IDS,
   ShipClassId,
   WeaponTier,
@@ -61,12 +60,13 @@ const MAX_ACTIONS = 400;
 
 export interface GameRecord {
   v: 1;
+  kind: "game";
   id: string;
   seed: number;
   mode: GameMode;
   difficulty: Difficulty;
-  level?: number;
-  upgrades?: Record<ShipClassId, WeaponTier>;
+  /** The verified campaign save this battle was started from. */
+  campaign?: CampaignState;
   fleet: ShipPlacement[];
   actions: PlayerAction[];
 }
@@ -150,31 +150,10 @@ export function parseStartRequest(body: unknown): StartRequest {
     fleet: placements,
   };
   if (request.mode === "campaign") {
-    const { level, upgrades } = body;
-    if (
-      !Number.isInteger(level) ||
-      (level as number) < 1 ||
-      (level as number) > CAMPAIGN_LEVELS
-    ) {
-      throw new GameRequestError("bad-request", "Invalid campaign level");
+    if (typeof body.campaignToken !== "string" || !body.campaignToken) {
+      throw new GameRequestError("bad-request", "Missing campaign save");
     }
-    if (!isRecord(upgrades)) {
-      throw new GameRequestError("bad-request", "Missing weapon upgrades");
-    }
-    const tiers = {} as Record<ShipClassId, WeaponTier>;
-    for (const id of SHIP_CLASS_IDS) {
-      const tier = upgrades[String(id)];
-      if (
-        !Number.isInteger(tier) ||
-        (tier as number) < 1 ||
-        (tier as number) > MAX_WEAPON_TIER
-      ) {
-        throw new GameRequestError("bad-request", "Invalid weapon tier");
-      }
-      tiers[id] = tier as WeaponTier;
-    }
-    request.level = level as number;
-    request.upgrades = tiers;
+    request.campaignToken = body.campaignToken;
   }
   return request;
 }
@@ -222,20 +201,24 @@ export function parseAction(value: unknown): PlayerAction {
   }
 }
 
+/** `campaign` is the already-verified save; required for campaign battles. */
 export function createRecord(
   request: StartRequest,
   id: string,
   seed: number,
+  campaign?: CampaignState,
 ): GameRecord {
+  if (request.mode === "campaign" && !campaign) {
+    throw new GameRequestError("bad-request", "Missing campaign save");
+  }
   return {
     v: 1,
+    kind: "game",
     id,
     seed: seed >>> 0,
     mode: request.mode,
     difficulty: request.difficulty,
-    ...(request.mode === "campaign"
-      ? { level: request.level, upgrades: request.upgrades }
-      : {}),
+    ...(request.mode === "campaign" ? { campaign } : {}),
     fleet: request.fleet,
     actions: [],
   };
@@ -269,7 +252,7 @@ function buildLive(record: GameRecord): LiveGame {
   const rng: Rng = createRng(record.seed);
   const enemyFleet = randomFleet(rng);
   if (record.mode === "campaign") {
-    const level = record.level ?? 1;
+    const level = record.campaign?.level ?? 1;
     const loadout = campaignLoadout(level);
     return {
       game: new AdvancedGame([record.fleet, enemyFleet], rng, [
@@ -334,10 +317,10 @@ function requireSpecial(
   ship: ShipClassId,
   tier: WeaponTier,
 ): void {
-  if (record.mode !== "campaign" || !record.upgrades) {
+  if (record.mode !== "campaign" || !record.campaign) {
     throw illegal("Weapon specials are only available in Battle Commander");
   }
-  if (record.upgrades[ship] !== tier) {
+  if (record.campaign.upgrades[ship] !== tier) {
     throw illegal("That ship does not carry this weapon tier");
   }
   if (live.usedSpecials.includes(ship)) {
@@ -493,6 +476,15 @@ export function act(record: GameRecord, action: PlayerAction): ActOutcome {
     throw illegal("Action limit reached");
   }
   const live = replay(record);
+  return applyLive(live, record, action);
+}
+
+/** `act` for an already-rebuilt live match (also lets tests script the AI). */
+export function applyLive(
+  live: LiveGame,
+  record: GameRecord,
+  action: PlayerAction,
+): ActOutcome {
   const { you, enemy } = applyToLive(live, record, action);
   const next: GameRecord = { ...record, actions: [...record.actions, action] };
   return {

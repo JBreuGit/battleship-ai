@@ -1,22 +1,15 @@
 "use client";
 
-import {
-  CSSProperties,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { AiPlayer, Difficulty, createAi } from "@/game/ai";
-import { Board, coordKey, shipCells } from "@/game/board";
-import { randomFleet } from "@/game/placement";
-import { createRng } from "@/game/rng";
+import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { Difficulty } from "@/game/ai";
+import { coordKey, shipCells } from "@/game/board";
+import { GameApiError, RemoteGame, sendAction } from "@/game/client";
+import { WireEvent, WireShotResult } from "@/game/protocol";
 import {
   BOARD_SIZE,
   Coordinate,
   FLEET_LENGTHS,
   FireOutcome,
-  FireResult,
   Orientation,
   ShipPlacement,
 } from "@/game/types";
@@ -40,25 +33,32 @@ type EnemyCell = "fog" | "miss" | "hit" | "sunk";
 export type PlayerCell = "water" | "ship" | "miss" | "hit" | "sunk";
 export type Side = "player" | "enemy";
 
-export interface Session {
-  fleet: ShipPlacement[];
-  playerBoard: Board;
-  enemyBoard: Board;
-  ai: AiPlayer;
+/**
+ * The browser's whole knowledge of a Classic match: the player's fleet and
+ * the server's opaque token. The enemy fleet and the AI live server-side.
+ */
+export type Session = RemoteGame;
+
+/** The player-facing message for a failed server call. */
+export function describeApiError(error: unknown): string {
+  if (error instanceof GameApiError) {
+    if (error.code === "network") {
+      return "Lost contact with fleet command — check your connection and try again.";
+    }
+    if (error.code === "stale-token" || error.code === "invalid-token") {
+      return "This engagement is out of sync with fleet command. Start a new battle.";
+    }
+    return error.message;
+  }
+  return "Fleet command did not respond. Try again.";
 }
 
-/** Build a battle session from the player's fleet; call from an event handler. */
-export function createSession(
-  fleet: ShipPlacement[],
-  difficulty: Difficulty,
-): Session {
-  const rng = createRng(Math.floor(Math.random() * 2 ** 32));
-  return {
-    fleet,
-    playerBoard: new Board(fleet),
-    enemyBoard: new Board(randomFleet(rng)),
-    ai: createAi(difficulty, rng),
-  };
+/** True when an error means the match cannot continue. */
+export function isFatalApiError(error: unknown): boolean {
+  return (
+    error instanceof GameApiError &&
+    (error.code === "stale-token" || error.code === "invalid-token")
+  );
 }
 
 export function placementFromCells(cells: Coordinate[]): ShipPlacement {
@@ -98,6 +98,13 @@ export interface BattleScreenProps {
   playAgainLabel?: string;
 }
 
+/** Pull the plain shot out of a server event (Classic only fires shots). */
+function shotOf(
+  event: WireEvent,
+): { target: Coordinate; result: WireShotResult } | null {
+  return event.kind === "shot" ? event : null;
+}
+
 export function makeGrid<T>(fill: T): T[][] {
   return Array.from({ length: BOARD_SIZE }, () =>
     Array.from({ length: BOARD_SIZE }, () => fill),
@@ -119,7 +126,7 @@ export function BattleScreen({
   );
   const [playerGrid, setPlayerGrid] = useState<PlayerCell[][]>(() => {
     const grid = makeGrid<PlayerCell>("water");
-    for (const cell of session.playerBoard.occupiedCells()) {
+    for (const cell of session.fleet.flatMap(shipCells)) {
       grid[cell.y][cell.x] = "ship";
     }
     return grid;
@@ -141,17 +148,23 @@ export function BattleScreen({
     seq: number;
   } | null>(null);
   const [winner, setWinner] = useState<Side | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [fatal, setFatal] = useState(false);
 
   const seqRef = useRef(0);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const shotsRef = useRef({ player: 0, enemy: 0 });
+  const gameRef = useRef<RemoteGame>(session);
+  const mountedRef = useRef(true);
 
-  useEffect(
-    () => () => {
-      timersRef.current.forEach(clearTimeout);
-    },
-    [],
-  );
+  useEffect(() => {
+    mountedRef.current = true;
+    const timers = timersRef.current;
+    return () => {
+      mountedRef.current = false;
+      timers.forEach(clearTimeout);
+    };
+  }, []);
 
   const later = useCallback((ms: number, fn: () => void) => {
     timersRef.current.push(setTimeout(fn, ms));
@@ -163,78 +176,83 @@ export function BattleScreen({
     [],
   );
 
-  const aiTurn = useCallback(() => {
-    const { ai, playerBoard } = session;
-    const target = ai.nextShot();
-    const result = playerBoard.fire(target);
-    ai.notify(target, result);
-    shotsRef.current.enemy += 1;
-    setEnemyShots(shotsRef.current.enemy);
+  /** Play back the enemy's server-resolved shot against the player's grid. */
+  const aiTurn = useCallback(
+    (target: Coordinate, result: WireShotResult) => {
+      if (result.outcome === "evaded") {
+        return;
+      }
+      shotsRef.current.enemy += 1;
+      setEnemyShots(shotsRef.current.enemy);
 
-    setPlayerGrid((prev) => {
-      const next = prev.map((row) => [...row]);
-      if (result.outcome === "miss") {
-        next[target.y][target.x] = "miss";
-      } else if (result.outcome === "hit") {
-        next[target.y][target.x] = "hit";
-      } else {
-        for (const cell of result.sunkShip ?? [target]) {
-          next[cell.y][cell.x] = "sunk";
+      setPlayerGrid((prev) => {
+        const next = prev.map((row) => [...row]);
+        if (result.outcome === "miss") {
+          next[target.y][target.x] = "miss";
+        } else if (result.outcome === "hit") {
+          next[target.y][target.x] = "hit";
+        } else {
+          for (const cell of result.sunkShip ?? [target]) {
+            next[cell.y][cell.x] = "sunk";
+          }
         }
-      }
-      return next;
-    });
-    seqRef.current += 1;
-    setFx({
-      board: "player",
-      cell: target,
-      outcome: result.outcome,
-      seq: seqRef.current,
-    });
-    sound.play("fire");
-    later(260, () => {
-      sound.play(soundFor(result.outcome));
-      if (result.outcome !== "miss") {
-        sound.voice("devin", result.outcome === "hit" ? "hit" : "sunk");
-      }
-    });
-    if (result.outcome === "hit") {
-      setShake({ board: "player", kind: "hit", seq: seqRef.current });
-    }
-    if (result.outcome === "sunk" || result.outcome === "fleet-sunk") {
-      const shipId = (playerBoard.shipIdAt(target) ?? 0) as ShipId;
-      setPlayerSunk((prev) => [...prev, shipId]);
-      if (result.sunkShip) {
-        const placement = placementFromCells(result.sunkShip);
-        setPlayerWrecks((prev) => [...prev, { shipId, placement }]);
-        setSunkFx({
-          board: "player",
-          cells: result.sunkShip,
-          seq: seqRef.current,
-        });
-      }
-      setCallout({ shipId, attacker: "devin", seq: seqRef.current });
-      setShake({ board: "player", kind: "sunk", seq: seqRef.current });
-    }
-
-    if (result.outcome === "fleet-sunk") {
-      later(GAME_OVER_DELAY, () => {
-        setWinner("enemy");
-        sound.play("defeat");
+        return next;
       });
-      return;
-    }
-    later(600, () => {
-      setTurn("player");
-      setBusy(false);
-      sound.play("turn");
-    });
-  }, [later, session, sound, soundFor]);
+      seqRef.current += 1;
+      setFx({
+        board: "player",
+        cell: target,
+        outcome: result.outcome,
+        seq: seqRef.current,
+      });
+      sound.play("fire");
+      later(260, () => {
+        sound.play(soundFor(result.outcome));
+        if (result.outcome !== "miss") {
+          sound.voice("devin", result.outcome === "hit" ? "hit" : "sunk");
+        }
+      });
+      if (result.outcome === "hit") {
+        setShake({ board: "player", kind: "hit", seq: seqRef.current });
+      }
+      if (result.outcome === "sunk" || result.outcome === "fleet-sunk") {
+        const shipId = (result.shipId ?? 0) as ShipId;
+        setPlayerSunk((prev) => [...prev, shipId]);
+        if (result.sunkShip) {
+          const placement = placementFromCells(result.sunkShip);
+          setPlayerWrecks((prev) => [...prev, { shipId, placement }]);
+          setSunkFx({
+            board: "player",
+            cells: result.sunkShip,
+            seq: seqRef.current,
+          });
+        }
+        setCallout({ shipId, attacker: "devin", seq: seqRef.current });
+        setShake({ board: "player", kind: "sunk", seq: seqRef.current });
+      }
+
+      if (result.outcome === "fleet-sunk") {
+        later(GAME_OVER_DELAY, () => {
+          setWinner("enemy");
+          sound.play("defeat");
+        });
+        return;
+      }
+      later(600, () => {
+        setTurn("player");
+        setBusy(false);
+        sound.play("turn");
+      });
+    },
+    [later, sound, soundFor],
+  );
 
   /** Apply one player shot's result to the enemy grid, fx, and wreck state. */
   const applyPlayerShot = useCallback(
-    (cell: Coordinate, result: FireResult) => {
-      const { enemyBoard } = session;
+    (cell: Coordinate, result: WireShotResult) => {
+      if (result.outcome === "evaded") {
+        return;
+      }
       shotsRef.current.player += 1;
       setPlayerShots(shotsRef.current.player);
 
@@ -268,7 +286,7 @@ export function BattleScreen({
         setShake({ board: "enemy", kind: "hit", seq: seqRef.current });
       }
       if (result.outcome === "sunk" || result.outcome === "fleet-sunk") {
-        const shipId = (enemyBoard.shipIdAt(cell) ?? 0) as ShipId;
+        const shipId = (result.shipId ?? 0) as ShipId;
         setEnemySunk((prev) => [...prev, shipId]);
         if (result.sunkShip) {
           const placement = placementFromCells(result.sunkShip);
@@ -283,50 +301,73 @@ export function BattleScreen({
         setShake({ board: "enemy", kind: "sunk", seq: seqRef.current });
       }
     },
-    [later, session, sound, soundFor],
+    [later, sound, soundFor],
   );
 
   /** Hand the turn over (or end the game) after the player's salvo. */
   const finishPlayerTurn = useCallback(
-    (fleetSunk: boolean) => {
+    (fleetSunk: boolean, enemyEvents: WireEvent[]) => {
       if (fleetSunk) {
-        setBusy(true);
         later(GAME_OVER_DELAY, () => {
           setWinner("player");
           sound.play("victory");
         });
         return;
       }
-      setBusy(true);
+      const reply = enemyEvents.map(shotOf).find((shot) => shot !== null);
+      if (!reply) {
+        setBusy(false);
+        return;
+      }
       later(AI_TURN_DELAY / 2, () => {
         setTurn("enemy");
         sound.play("turn");
       });
-      later(AI_TURN_DELAY, aiTurn);
+      later(AI_TURN_DELAY, () => aiTurn(reply.target, reply.result));
     },
     [aiTurn, later, sound],
   );
 
   const handleFire = useCallback(
     (cell: Coordinate) => {
-      if (busy || winner || turn !== "player") {
+      if (busy || winner || fatal || turn !== "player") {
         return;
       }
-      const { enemyBoard } = session;
-      if (enemyBoard.hasBeenFiredAt(cell)) {
+      if (enemyGrid[cell.y][cell.x] !== "fog") {
         return;
       }
 
-      const result = enemyBoard.fire(cell);
+      setBusy(true);
+      setError(null);
       sound.play("fire");
-      applyPlayerShot(cell, result);
-      finishPlayerTurn(result.outcome === "fleet-sunk");
+      void sendAction(gameRef.current, { type: "fire", target: cell }).then(
+        ({ game, response }) => {
+          if (!mountedRef.current) {
+            return;
+          }
+          gameRef.current = game;
+          const shot = response.you.map(shotOf).find((s) => s !== null);
+          if (shot) {
+            applyPlayerShot(shot.target, shot.result);
+          }
+          finishPlayerTurn(response.state.winner === 0, response.enemy);
+        },
+        (err: unknown) => {
+          if (!mountedRef.current) {
+            return;
+          }
+          setError(describeApiError(err));
+          setFatal(isFatalApiError(err));
+          setBusy(false);
+        },
+      );
     },
     [
       applyPlayerShot,
       busy,
+      enemyGrid,
+      fatal,
       finishPlayerTurn,
-      session,
       sound,
       turn,
       winner,
@@ -358,6 +399,14 @@ export function BattleScreen({
         }
       />
 
+      {error && (
+        <ConnectionNotice
+          message={error}
+          fatal={fatal}
+          onRestart={onPlayAgain}
+        />
+      )}
+
       <div
         className={`flex w-full flex-col items-center gap-6 transition-[filter] duration-700 lg:flex-row lg:items-start lg:justify-center lg:gap-10 ${
           winner === "enemy" ? "grayscale" : ""
@@ -370,76 +419,84 @@ export function BattleScreen({
           entranceDelayMs={80}
         >
           <div className="relative">
-          <div
-            key={shake?.board === "enemy" ? shake.seq : "steady"}
-            className={`relative ${
-              shake?.board === "enemy"
-                ? shake.kind === "sunk"
-                  ? "animate-board-shake"
-                  : "animate-board-shake-soft"
-                : ""
-            }`}
-          >
-            <div className="grid grid-cols-10 overflow-hidden rounded-xl bg-navy-950/70">
-            {enemyGrid.flatMap((row, y) =>
-              row.map((state, x) => {
-                const isFx =
-                  fx?.board === "enemy" && fx.cell.x === x && fx.cell.y === y;
-                const clickable = state === "fog" && !busy && !winner;
-                return (
-                  <button
-                    key={coordKey({ x, y })}
-                    type="button"
-                    aria-label={`Fire at ${String.fromCharCode(65 + x)}${y + 1}`}
-                    disabled={!clickable}
-                    onClick={() => handleFire({ x, y })}
-                    className={`relative aspect-square rounded-md shadow-[inset_0_0_0_1px_rgba(6,14,28,0.55),inset_0_2px_3px_rgba(6,14,28,0.35)] transition-all duration-150 ease-out ${
-                      state === "fog"
-                        ? clickable
-                          ? "water-cell cursor-crosshair hover:z-10 hover:scale-105 hover:brightness-125"
-                          : "water-cell"
-                        : state === "sunk"
-                          ? "cell-wreck-water"
-                          : state === "hit"
-                            ? "cell-scorched"
-                            : "bg-navy-900"
-                    }`}
-                  >
-                    <CellMark state={state} />
-                    {isFx && <ShotOverlay key={fx.seq} outcome={fx.outcome} />}
-                  </button>
-                );
-              }),
-            )}
+            <div
+              key={shake?.board === "enemy" ? shake.seq : "steady"}
+              className={`relative ${
+                shake?.board === "enemy"
+                  ? shake.kind === "sunk"
+                    ? "animate-board-shake"
+                    : "animate-board-shake-soft"
+                  : ""
+              }`}
+            >
+              <div className="grid grid-cols-10 overflow-hidden rounded-xl bg-navy-950/70">
+                {enemyGrid.flatMap((row, y) =>
+                  row.map((state, x) => {
+                    const isFx =
+                      fx?.board === "enemy" &&
+                      fx.cell.x === x &&
+                      fx.cell.y === y;
+                    const clickable =
+                      state === "fog" && !busy && !winner && !fatal;
+                    return (
+                      <button
+                        key={coordKey({ x, y })}
+                        type="button"
+                        aria-label={`Fire at ${String.fromCharCode(65 + x)}${y + 1}`}
+                        disabled={!clickable}
+                        onClick={() => handleFire({ x, y })}
+                        className={`relative aspect-square rounded-md shadow-[inset_0_0_0_1px_rgba(6,14,28,0.55),inset_0_2px_3px_rgba(6,14,28,0.35)] transition-all duration-150 ease-out ${
+                          state === "fog"
+                            ? clickable
+                              ? "water-cell cursor-crosshair hover:z-10 hover:scale-105 hover:brightness-125"
+                              : "water-cell"
+                            : state === "sunk"
+                              ? "cell-wreck-water"
+                              : state === "hit"
+                                ? "cell-scorched"
+                                : "bg-navy-900"
+                        }`}
+                      >
+                        <CellMark state={state} />
+                        {isFx && (
+                          <ShotOverlay key={fx.seq} outcome={fx.outcome} />
+                        )}
+                      </button>
+                    );
+                  }),
+                )}
+              </div>
+              {enemyWrecks.map((wreck) => (
+                <ShipOverlay
+                  key={wreck.shipId}
+                  shipId={wreck.shipId}
+                  placement={wreck.placement}
+                  variant="sunk"
+                  player="devin"
+                  className="pointer-events-none z-10 animate-wreck-settle"
+                  style={
+                    {
+                      "--list": wreck.shipId % 2 ? "-2.2deg" : "2.4deg",
+                    } as CSSProperties
+                  }
+                />
+              ))}
+              {enemyWrecks.map((wreck) => (
+                <WreckSmoke
+                  key={`smoke-${wreck.shipId}`}
+                  placement={wreck.placement}
+                />
+              ))}
             </div>
-            {enemyWrecks.map((wreck) => (
-              <ShipOverlay
-                key={wreck.shipId}
-                shipId={wreck.shipId}
-                placement={wreck.placement}
-                variant="sunk"
-                player="devin"
-                className="pointer-events-none z-10 animate-wreck-settle"
-                style={
-                  {
-                    "--list": wreck.shipId % 2 ? "-2.2deg" : "2.4deg",
-                  } as CSSProperties
-                }
+            {sunkFx?.board === "enemy" && (
+              <SunkExplosions
+                key={`sunkfx-${sunkFx.seq}`}
+                cells={sunkFx.cells}
               />
-            ))}
-            {enemyWrecks.map((wreck) => (
-              <WreckSmoke
-                key={`smoke-${wreck.shipId}`}
-                placement={wreck.placement}
-              />
-            ))}
-          </div>
-          {sunkFx?.board === "enemy" && (
-            <SunkExplosions key={`sunkfx-${sunkFx.seq}`} cells={sunkFx.cells} />
-          )}
-          {callout && sunkFx?.board === "enemy" && (
-            <SunkBanner callout={callout} />
-          )}
+            )}
+            {callout && sunkFx?.board === "enemy" && (
+              <SunkBanner callout={callout} />
+            )}
           </div>
         </BoardShell>
 
@@ -449,7 +506,10 @@ export function BattleScreen({
             sunk={enemySunk}
             player="devin"
           />
-          <FleetStatus label={`${PLAYERS.dutch.name} fleet`} sunk={playerSunk} />
+          <FleetStatus
+            label={`${PLAYERS.dutch.name} fleet`}
+            sunk={playerSunk}
+          />
         </div>
 
         <BoardShell
@@ -459,86 +519,91 @@ export function BattleScreen({
           entranceDelayMs={320}
         >
           <div className="relative">
-          <div
-            key={shake?.board === "player" ? shake.seq : "steady"}
-            className={`relative ${
-              shake?.board === "player"
-                ? shake.kind === "sunk"
-                  ? "animate-board-shake"
-                  : "animate-board-shake-soft"
-                : ""
-            }`}
-          >
-            <div className="grid grid-cols-10 overflow-hidden rounded-xl bg-navy-950/70">
-              {playerGrid.flatMap((row, y) =>
-                row.map((state, x) => {
-                  const isFx =
-                    fx?.board === "player" &&
-                    fx.cell.x === x &&
-                    fx.cell.y === y;
-                  return (
-                    <div
-                      key={coordKey({ x, y })}
-                      className={`relative aspect-square rounded-md shadow-[inset_0_0_0_1px_rgba(6,14,28,0.55),inset_0_2px_3px_rgba(6,14,28,0.35)] ${
-                        state === "sunk"
-                          ? "cell-wreck-water"
-                          : state === "hit"
-                            ? "cell-scorched"
-                            : "water-cell-light"
-                      }`}
-                    >
-                      <CellMark state={state} />
-                      {isFx && (
-                        <ShotOverlay key={fx.seq} outcome={fx.outcome} />
-                      )}
-                    </div>
-                  );
-                }),
+            <div
+              key={shake?.board === "player" ? shake.seq : "steady"}
+              className={`relative ${
+                shake?.board === "player"
+                  ? shake.kind === "sunk"
+                    ? "animate-board-shake"
+                    : "animate-board-shake-soft"
+                  : ""
+              }`}
+            >
+              <div className="grid grid-cols-10 overflow-hidden rounded-xl bg-navy-950/70">
+                {playerGrid.flatMap((row, y) =>
+                  row.map((state, x) => {
+                    const isFx =
+                      fx?.board === "player" &&
+                      fx.cell.x === x &&
+                      fx.cell.y === y;
+                    return (
+                      <div
+                        key={coordKey({ x, y })}
+                        className={`relative aspect-square rounded-md shadow-[inset_0_0_0_1px_rgba(6,14,28,0.55),inset_0_2px_3px_rgba(6,14,28,0.35)] ${
+                          state === "sunk"
+                            ? "cell-wreck-water"
+                            : state === "hit"
+                              ? "cell-scorched"
+                              : "water-cell-light"
+                        }`}
+                      >
+                        <CellMark state={state} />
+                        {isFx && (
+                          <ShotOverlay key={fx.seq} outcome={fx.outcome} />
+                        )}
+                      </div>
+                    );
+                  }),
+                )}
+              </div>
+              {session.fleet.map((placement, shipId) =>
+                playerSunk.includes(shipId) ? null : (
+                  <ShipOverlay
+                    key={shipId}
+                    shipId={shipId as ShipId}
+                    placement={placement}
+                    hits={damagedSegments(placement, playerGrid)}
+                    className="pointer-events-none z-10 animate-ship-bob"
+                    style={{
+                      animationDelay: `${shipId * 0.55}s`,
+                      animationDuration: `${3.3 + shipId * 0.4}s`,
+                    }}
+                  />
+                ),
               )}
-            </div>
-            {session.fleet.map((placement, shipId) =>
-              playerSunk.includes(shipId) ? null : (
+              <DamageSmoke
+                cells={damagedCells(session.fleet, playerSunk, playerGrid)}
+              />
+              {playerWrecks.map((wreck) => (
                 <ShipOverlay
-                  key={shipId}
-                  shipId={shipId as ShipId}
-                  placement={placement}
-                  hits={damagedSegments(placement, playerGrid)}
-                  className="pointer-events-none z-10 animate-ship-bob"
-                  style={{
-                    animationDelay: `${shipId * 0.55}s`,
-                    animationDuration: `${3.3 + shipId * 0.4}s`,
-                  }}
+                  key={`wreck-${wreck.shipId}`}
+                  shipId={wreck.shipId}
+                  placement={wreck.placement}
+                  variant="sunk"
+                  className="pointer-events-none z-10 animate-wreck-settle"
+                  style={
+                    {
+                      "--list": wreck.shipId % 2 ? "-2.2deg" : "2.4deg",
+                    } as CSSProperties
+                  }
                 />
-              ),
+              ))}
+              {playerWrecks.map((wreck) => (
+                <WreckSmoke
+                  key={`smoke-${wreck.shipId}`}
+                  placement={wreck.placement}
+                />
+              ))}
+            </div>
+            {sunkFx?.board === "player" && (
+              <SunkExplosions
+                key={`sunkfx-${sunkFx.seq}`}
+                cells={sunkFx.cells}
+              />
             )}
-            <DamageSmoke cells={damagedCells(session.fleet, playerSunk, playerGrid)} />
-            {playerWrecks.map((wreck) => (
-              <ShipOverlay
-                key={`wreck-${wreck.shipId}`}
-                shipId={wreck.shipId}
-                placement={wreck.placement}
-                variant="sunk"
-                className="pointer-events-none z-10 animate-wreck-settle"
-                style={
-                  {
-                    "--list": wreck.shipId % 2 ? "-2.2deg" : "2.4deg",
-                  } as CSSProperties
-                }
-              />
-            ))}
-            {playerWrecks.map((wreck) => (
-              <WreckSmoke
-                key={`smoke-${wreck.shipId}`}
-                placement={wreck.placement}
-              />
-            ))}
-          </div>
-          {sunkFx?.board === "player" && (
-            <SunkExplosions key={`sunkfx-${sunkFx.seq}`} cells={sunkFx.cells} />
-          )}
-          {callout && sunkFx?.board === "player" && (
-            <SunkBanner callout={callout} />
-          )}
+            {callout && sunkFx?.board === "player" && (
+              <SunkBanner callout={callout} />
+            )}
           </div>
         </BoardShell>
       </div>
@@ -551,6 +616,35 @@ export function BattleScreen({
           onPlayAgain={onPlayAgain}
           actionLabel={playAgainLabel}
         />
+      )}
+    </div>
+  );
+}
+
+/** Server-call failure notice; fatal errors offer a restart instead of a retry. */
+export function ConnectionNotice({
+  message,
+  fatal,
+  onRestart,
+}: {
+  message: string;
+  fatal: boolean;
+  onRestart: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="radar-panel flex w-full max-w-xl flex-wrap items-center justify-between gap-3 rounded-2xl border border-coral-500/50 bg-navy-900/90 px-4 py-3 text-sm text-foam-100 shadow-panel"
+    >
+      <span>{message}</span>
+      {fatal && (
+        <button
+          type="button"
+          onClick={onRestart}
+          className="rounded-lg border border-coral-400/60 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-coral-200 hover:bg-coral-500/20"
+        >
+          New battle
+        </button>
       )}
     </div>
   );
@@ -641,7 +735,11 @@ export function FleetStatus({
           return (
             <li
               key={i}
-              className={isSunk ? "opacity-70 grayscale-[0.3] transition-all duration-300" : "transition-all duration-300"}
+              className={
+                isSunk
+                  ? "opacity-70 grayscale-[0.3] transition-all duration-300"
+                  : "transition-all duration-300"
+              }
               style={{ width: `${length * 0.9}rem`, height: "1.1rem" }}
             >
               <ShipSprite

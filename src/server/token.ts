@@ -12,8 +12,8 @@ import { brotliCompressSync, brotliDecompressSync } from "node:zlib";
  *
  * The client holds the token but cannot read it (the enemy fleet's seed is
  * inside) or alter it (the GCM tag covers every byte). The key comes from
- * `GAME_SECRET`; when that is not configured a random key is generated per
- * build so tokens still work across serverless instances of one deploy.
+ * `GAME_SECRET`, which must be the same on every server instance; there is
+ * deliberately no fallback, since any guessable key would expose the fleet.
  */
 
 const VERSION = 1;

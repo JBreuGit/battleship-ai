@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { coordKey } from "@/game/board";
-import { ABILITY_UNLOCK_LEVELS, ShipClassId, WeaponTier } from "@/game/campaign";
+import {
+  ABILITY_UNLOCK_LEVELS,
+  ShipClassId,
+  WeaponTier,
+  createCampaignState,
+} from "@/game/campaign";
 import { randomFleet } from "@/game/placement";
 import { PlayerAction, StartRequest, WireEvent } from "@/game/protocol";
 import { createRng } from "@/game/rng";
@@ -37,7 +42,12 @@ const tiers = (t: WeaponTier): Record<ShipClassId, WeaponTier> => ({
 });
 
 function campaign(level: number, tier: WeaponTier = 1): GameRecord {
-  return start({ mode: "campaign", level, upgrades: tiers(tier) });
+  return createRecord(
+    { mode: "campaign", difficulty: "easy", fleet, campaignToken: "sealed" },
+    "game-1",
+    12345,
+    { ...createCampaignState(), level, upgrades: tiers(tier) },
+  );
 }
 
 /** Cells of the hidden enemy fleet — test-only, read straight off the engine. */
@@ -111,7 +121,7 @@ describe("parseStartRequest", () => {
     );
   });
 
-  it("requires a valid level and full upgrade map for campaign battles", () => {
+  it("requires a sealed campaign save for campaign battles", () => {
     expectIllegal(
       () => parseStartRequest({ mode: "campaign", difficulty: "easy", fleet }),
       "bad-request",
@@ -122,19 +132,8 @@ describe("parseStartRequest", () => {
           mode: "campaign",
           difficulty: "easy",
           fleet,
-          level: 21,
-          upgrades: tiers(1),
-        }),
-      "bad-request",
-    );
-    expectIllegal(
-      () =>
-        parseStartRequest({
-          mode: "campaign",
-          difficulty: "easy",
-          fleet,
-          level: 3,
-          upgrades: { ...tiers(1), 4: 9 },
+          level: 20,
+          upgrades: tiers(4),
         }),
       "bad-request",
     );
@@ -142,11 +141,13 @@ describe("parseStartRequest", () => {
       mode: "campaign",
       difficulty: "easy",
       fleet,
-      level: 3,
-      upgrades: tiers(2),
+      campaignToken: "sealed",
     });
-    expect(ok.level).toBe(3);
-    expect(ok.upgrades).toEqual(tiers(2));
+    expect(ok.campaignToken).toBe("sealed");
+    expectIllegal(
+      () => createRecord(ok, "id", 1),
+      "bad-request",
+    );
   });
 });
 

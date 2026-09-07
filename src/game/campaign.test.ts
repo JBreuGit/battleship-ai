@@ -10,17 +10,17 @@ import {
   UPGRADE_LEVELS,
   campaignLoadout,
   applyUpgrade,
+  clearStoredCampaign,
   createCampaignState,
   deserializeCampaign,
   isLevelCompleted,
-  loadCampaign,
+  loadStoredCampaign,
   rankForLevel,
   rankIndexForLevel,
   recordLoss,
   recordWin,
-  resetCampaign,
-  saveCampaign,
   serializeCampaign,
+  storeCampaign,
   totalLosses,
   totalWins,
 } from "./campaign";
@@ -133,23 +133,27 @@ describe("persistence", () => {
     ).toBeNull();
   });
 
-  it("saves to and loads from localStorage", () => {
+  it("stores the sealed save with its readable copy in localStorage", () => {
     const state = recordWin(createCampaignState()).state;
-    saveCampaign(state);
-    expect(loadCampaign()).toEqual(state);
+    storeCampaign({ token: "sealed", state });
+    expect(loadStoredCampaign()).toEqual({ token: "sealed", state });
   });
 
-  it("falls back to a fresh campaign when storage is empty or corrupt", () => {
-    expect(loadCampaign()).toEqual(createCampaignState());
+  it("reports no save when storage is empty, corrupt, or lacks a token", () => {
+    expect(loadStoredCampaign()).toBeNull();
     window.localStorage.setItem(CAMPAIGN_STORAGE_KEY, "garbage");
-    expect(loadCampaign()).toEqual(createCampaignState());
+    expect(loadStoredCampaign()).toBeNull();
+    window.localStorage.setItem(
+      CAMPAIGN_STORAGE_KEY,
+      JSON.stringify({ state: createCampaignState() }),
+    );
+    expect(loadStoredCampaign()).toBeNull();
   });
 
-  it("resetCampaign clears progress", () => {
-    saveCampaign(recordWin(createCampaignState()).state);
-    const fresh = resetCampaign();
-    expect(fresh.level).toBe(1);
-    expect(loadCampaign()).toEqual(fresh);
+  it("clearStoredCampaign removes the save", () => {
+    storeCampaign({ token: "sealed", state: createCampaignState() });
+    clearStoredCampaign();
+    expect(loadStoredCampaign()).toBeNull();
   });
 });
 

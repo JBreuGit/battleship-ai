@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { coordKey } from "@/game/board";
 import { randomFleet } from "@/game/placement";
-import { ActResponse, ApiError, StartResponse } from "@/game/protocol";
+import { createCampaignState } from "@/game/campaign";
+import {
+  ActResponse,
+  ApiError,
+  CampaignResponse,
+  StartResponse,
+} from "@/game/protocol";
 import { createRng } from "@/game/rng";
-import { handleAct, handleStart } from "./api";
+import { handleAct, handleCampaign, handleStart } from "./api";
+import { sealCampaign } from "./campaign";
 import { MemoryGuardStore, ReplayGuard } from "./replayGuard";
 import { openToken, sealToken } from "./token";
 
@@ -50,8 +57,9 @@ describe("handleStart", () => {
   });
 });
 
+const guard = () => new ReplayGuard(new MemoryGuardStore());
+
 describe("handleAct", () => {
-  const guard = () => new ReplayGuard(new MemoryGuardStore());
 
   it("applies a shot and advances the token", async () => {
     const { token } = startClassic();
@@ -138,9 +146,86 @@ describe("handleAct", () => {
     const record = openToken(token) as Record<string, unknown>;
     const forged = sealToken({ ...record, mode: "campaign", level: 20 });
     // Re-sealing with the real key is only possible server-side; even then the
-    // record must be self-consistent — a classic record lacks upgrades.
+    // record must be self-consistent — a classic record lacks a campaign save.
     const result = await handleAct({ token: forged, action: { type: "boost", ship: 4 } }, guard());
     expect(result.status).toBe(422);
+  });
+});
+
+describe("campaign saves", () => {
+  it("loads a fresh save without a token and round-trips a sealed one", () => {
+    const fresh = handleCampaign({ op: "load", token: null });
+    expect(fresh.status).toBe(200);
+    const { token, state } = fresh.body as CampaignResponse;
+    expect(state.level).toBe(1);
+    const again = handleCampaign({ op: "load", token });
+    expect((again.body as CampaignResponse).state).toEqual(state);
+  });
+
+  it("rejects plain JSON, tampered, and game tokens as campaign saves", () => {
+    const plain = JSON.stringify({ ...createCampaignState(), level: 20 });
+    expect(handleCampaign({ op: "load", token: plain }).status).toBe(401);
+    const { token } = handleCampaign({ op: "load", token: null }).body as CampaignResponse;
+    expect(handleCampaign({ op: "load", token: token.slice(0, -3) + "AAA" }).status).toBe(401);
+    const game = startClassic().token;
+    expect(handleCampaign({ op: "load", token: game }).status).toBe(401);
+    expect(
+      handleStart({ mode: "campaign", difficulty: "easy", fleet, campaignToken: plain }).status,
+    ).toBe(401);
+  });
+
+  it("only spends upgrade points the save actually holds", () => {
+    const broke = sealCampaign(createCampaignState());
+    expect(handleCampaign({ op: "upgrade", token: broke, ship: 0 }).status).toBe(422);
+    const rich = sealCampaign({ ...createCampaignState(), unspentUpgradePoints: 1 });
+    const upgraded = handleCampaign({ op: "upgrade", token: rich, ship: 0 });
+    expect(upgraded.status).toBe(200);
+    const { state, token } = upgraded.body as CampaignResponse;
+    expect(state.upgrades[0]).toBe(2);
+    expect(state.unspentUpgradePoints).toBe(0);
+    expect(handleCampaign({ op: "upgrade", token, ship: 1 }).status).toBe(422);
+  });
+
+  it("advances the save only when the server sees the battle won", async () => {
+    const save = sealCampaign({ ...createCampaignState(), level: 3 });
+    const started = handleStart({
+      mode: "campaign",
+      difficulty: "easy",
+      fleet,
+      campaignToken: save,
+    });
+    expect(started.status).toBe(200);
+    let { token } = started.body as StartResponse;
+    const g = new ReplayGuard(new MemoryGuardStore());
+    let update: ActResponse["campaign"];
+    outer: for (let y = 0; y < 10; y++) {
+      for (let x = 0; x < 10; x++) {
+        const result = await handleAct(
+          { token, action: { type: "fire", target: { x, y } } },
+          g,
+        );
+        const body = result.body as ActResponse;
+        if (result.status !== 200) {
+          throw new Error(JSON.stringify(result.body));
+        }
+        token = body.token;
+        if (body.campaign) {
+          update = body.campaign;
+          break outer;
+        }
+        expect(body.campaign).toBeUndefined();
+      }
+    }
+    expect(update).toBeDefined();
+    if (update!.won) {
+      expect(update!.state.level).toBe(4);
+      expect(update!.upgradePointEarned).toBe(true);
+    } else {
+      expect(update!.state.level).toBe(3);
+      expect(update!.state.records[3].losses).toBe(1);
+    }
+    const reloaded = handleCampaign({ op: "load", token: update!.token });
+    expect((reloaded.body as CampaignResponse).state).toEqual(update!.state);
   });
 
   it("a full game through the API never reveals unrevealed enemy cells", async () => {
@@ -162,7 +247,9 @@ describe("handleAct", () => {
         for (const event of body.you) {
           if (event.kind === "shot") {
             seen.add(coordKey(event.target));
-            for (const cell of event.result.sunkShip ?? []) {
+            const sunk =
+              event.result.outcome === "evaded" ? [] : event.result.sunkShip ?? [];
+            for (const cell of sunk) {
               // Sunk footprints are only ever cells the player already hit.
               expect(seen.has(coordKey(cell))).toBe(true);
             }

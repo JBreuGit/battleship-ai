@@ -7,7 +7,7 @@ import type {
   ShotResult,
   SonarReport,
 } from "./advanced";
-import type { ShipClassId, WeaponTier } from "./campaign";
+import type { CampaignState, RankInfo, ShipClassId } from "./campaign";
 import type { Coordinate, ShipPlacement } from "./types";
 
 /**
@@ -25,11 +25,27 @@ export interface StartRequest {
   mode: GameMode;
   /** Classic / Admiral AI difficulty; ignored for campaign battles. */
   difficulty: Difficulty;
-  /** Campaign level 1..20; required for campaign battles. */
-  level?: number;
-  /** Campaign weapon tier per ship class; required for campaign battles. */
-  upgrades?: Record<ShipClassId, WeaponTier>;
+  /** Sealed campaign save; required for campaign battles. */
+  campaignToken?: string;
   fleet: ShipPlacement[];
+}
+
+/** Campaign save operations. The save itself only travels sealed. */
+export type CampaignRequest =
+  | { op: "load"; token: string | null }
+  | { op: "upgrade"; token: string; ship: ShipClassId }
+  | { op: "reset" };
+
+export interface CampaignResponse {
+  token: string;
+  state: CampaignState;
+}
+
+/** Sent with the final action of a campaign battle. */
+export interface CampaignUpdate extends CampaignResponse {
+  won: boolean;
+  promotedTo: RankInfo | null;
+  upgradePointEarned: boolean;
 }
 
 /** One player action. The server validates every field against its state. */
@@ -97,6 +113,8 @@ export interface ActResponse {
   /** Events of the enemy turn that followed (empty if the turn did not pass). */
   enemy: WireEvent[];
   state: PublicState;
+  /** Present once a campaign battle has been decided. */
+  campaign?: CampaignUpdate;
 }
 
 export type ApiErrorCode =

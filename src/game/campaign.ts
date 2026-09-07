@@ -267,8 +267,6 @@ export function totalLosses(state: CampaignState): number {
   return Object.values(state.records).reduce((sum, r) => sum + r.losses, 0);
 }
 
-export const CAMPAIGN_STORAGE_KEY = "battleship-campaign-v1";
-
 export function serializeCampaign(state: CampaignState): string {
   return JSON.stringify(state);
 }
@@ -345,23 +343,48 @@ export function deserializeCampaign(raw: string): CampaignState | null {
   }
 }
 
-export function loadCampaign(): CampaignState {
-  if (typeof window === "undefined") {
-    return createCampaignState();
-  }
-  const raw = window.localStorage.getItem(CAMPAIGN_STORAGE_KEY);
-  return (raw && deserializeCampaign(raw)) || createCampaignState();
+export const CAMPAIGN_STORAGE_KEY = "battleship-campaign-v2";
+
+/**
+ * What the browser keeps of a campaign: the sealed save the server issued
+ * (the only thing the server will accept back) plus a readable copy so the
+ * menu can show progress before the server has been asked. Editing the copy
+ * changes nothing but the menu; the token cannot be edited.
+ */
+export interface StoredCampaign {
+  token: string;
+  state: CampaignState;
 }
 
-export function saveCampaign(state: CampaignState): void {
+export function loadStoredCampaign(): StoredCampaign | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const raw = window.localStorage.getItem(CAMPAIGN_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+  try {
+    const data = JSON.parse(raw) as Partial<StoredCampaign>;
+    if (typeof data.token !== "string" || !data.token) {
+      return null;
+    }
+    const state = deserializeCampaign(JSON.stringify(data.state));
+    return state ? { token: data.token, state } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function storeCampaign(saved: StoredCampaign): void {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(CAMPAIGN_STORAGE_KEY, serializeCampaign(state));
+  window.localStorage.setItem(CAMPAIGN_STORAGE_KEY, JSON.stringify(saved));
 }
 
-export function resetCampaign(): CampaignState {
-  const fresh = createCampaignState();
-  saveCampaign(fresh);
-  return fresh;
+export function clearStoredCampaign(): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(CAMPAIGN_STORAGE_KEY);
+  }
 }

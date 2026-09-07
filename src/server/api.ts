@@ -1,10 +1,19 @@
 import "server-only";
+import { recordLoss, recordWin } from "@/game/campaign";
 import {
   ActResponse,
   ApiError,
   ApiErrorCode,
+  CampaignResponse,
+  CampaignUpdate,
   StartResponse,
 } from "@/game/protocol";
+import {
+  openCampaign,
+  parseCampaignRequest,
+  runCampaignRequest,
+  sealCampaign,
+} from "./campaign";
 import {
   GameRecord,
   GameRequestError,
@@ -26,7 +35,7 @@ import { TokenError, newGameId, newSeed, openToken, sealToken } from "./token";
 
 export interface ApiResult {
   status: number;
-  body: StartResponse | ActResponse | ApiError;
+  body: StartResponse | ActResponse | CampaignResponse | ApiError;
 }
 
 const STATUS: Record<ApiErrorCode, number> = {
@@ -46,15 +55,64 @@ function fail(error: ApiErrorCode, message: string): ApiResult {
 export function handleStart(body: unknown): ApiResult {
   try {
     const request = parseStartRequest(body);
-    const record = createRecord(request, newGameId(), newSeed());
+    const campaign =
+      request.mode === "campaign"
+        ? openCampaign(request.campaignToken)
+        : undefined;
+    const record = createRecord(request, newGameId(), newSeed(), campaign);
     const state = publicState(replay(record), record);
     return { status: 200, body: { token: sealToken(record), state } };
   } catch (error) {
     if (error instanceof GameRequestError) {
       return fail(error.code, error.message);
     }
+    if (error instanceof TokenError) {
+      return fail("invalid-token", error.message);
+    }
     return fail("server-error", "Could not start the engagement");
   }
+}
+
+export function handleCampaign(body: unknown): ApiResult {
+  try {
+    return { status: 200, body: runCampaignRequest(parseCampaignRequest(body)) };
+  } catch (error) {
+    if (error instanceof GameRequestError) {
+      return fail(error.code, error.message);
+    }
+    if (error instanceof TokenError) {
+      return fail("invalid-token", error.message);
+    }
+    return fail("server-error", "Could not update the campaign");
+  }
+}
+
+/** Advance the campaign save once a campaign battle has been decided. */
+function settleCampaign(
+  record: GameRecord,
+  winner: number | null,
+): CampaignUpdate | undefined {
+  if (record.mode !== "campaign" || !record.campaign || winner === null) {
+    return undefined;
+  }
+  if (winner === 0) {
+    const outcome = recordWin(record.campaign);
+    return {
+      token: sealCampaign(outcome.state),
+      state: outcome.state,
+      won: true,
+      promotedTo: outcome.promotedTo,
+      upgradePointEarned: outcome.upgradePointEarned,
+    };
+  }
+  const state = recordLoss(record.campaign);
+  return {
+    token: sealCampaign(state),
+    state,
+    won: false,
+    promotedTo: null,
+    upgradePointEarned: false,
+  };
 }
 
 function isGameRecord(value: unknown): value is GameRecord {
@@ -62,6 +120,7 @@ function isGameRecord(value: unknown): value is GameRecord {
     typeof value === "object" &&
     value !== null &&
     (value as GameRecord).v === 1 &&
+    (value as GameRecord).kind === "game" &&
     typeof (value as GameRecord).id === "string" &&
     Array.isArray((value as GameRecord).actions)
   );
@@ -115,11 +174,13 @@ export async function handleAct(
 
   try {
     const outcome = act(record, action);
+    const campaign = settleCampaign(record, outcome.state.winner);
     const response: ActResponse = {
       token: sealToken(outcome.record),
       you: outcome.you,
       enemy: outcome.enemy,
       state: outcome.state,
+      ...(campaign ? { campaign } : {}),
     };
     await guard.complete(record.id, index, JSON.stringify(response));
     return { status: 200, body: response };
