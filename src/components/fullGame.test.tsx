@@ -1,13 +1,22 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { AiPlayer } from "@/game/ai";
 import { AdvancedGame } from "@/game/advanced";
 import { AdvancedAiPlayer, TurnEvent } from "@/game/advancedAi";
-import { Board, coordKey, shipCells } from "@/game/board";
-import { createRng } from "@/game/rng";
-import { Coordinate, FireResult, ShipPlacement } from "@/game/types";
-import { AdmiralBattleScreen, AdmiralSession } from "./AdmiralBattleScreen";
-import { BattleScreen, FleetStatus, Session } from "./BattleScreen";
+import { coordKey, shipCells } from "@/game/board";
+import { RemoteGame } from "@/game/client";
+import { Coordinate, ShipPlacement } from "@/game/types";
+import { createFakeServer } from "@/test/fakeGameServer";
+import { AdmiralBattleScreen } from "./AdmiralBattleScreen";
+import { BattleScreen, FleetStatus } from "./BattleScreen";
 import { SoundControls } from "./useSoundManager";
+
+const client = vi.hoisted(() => ({
+  sendAction: vi.fn(),
+}));
+
+vi.mock("@/game/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/game/client")>()),
+  sendAction: client.sendAction,
+}));
 
 /** A legal fleet: rows 0/2/4/6/8, bows at the left edge. */
 function testFleet(): ShipPlacement[] {
@@ -35,18 +44,19 @@ function waterCells(): Coordinate[] {
   return cells;
 }
 
-/** A scripted classic AI that fires a fixed list of squares in order. */
-class ScriptedAi implements AiPlayer {
+/** A scripted AI that fires plain shots at a fixed list of squares. */
+class ScriptedAi implements AdvancedAiPlayer {
   readonly difficulty = "easy" as const;
   readonly targets: Coordinate[] = [];
   private index = 0;
   constructor(private readonly script: Coordinate[]) {}
-  nextShot(): Coordinate {
+  takeTurn(game: AdvancedGame, me: 0 | 1): TurnEvent[] {
     const target = this.script[this.index++];
     this.targets.push(target);
-    return target;
+    const result = game.fireShot(me, target);
+    return [{ kind: "shot", target, result }];
   }
-  notify(_target: Coordinate, _result: FireResult): void {}
+  noteRevealedEnemyCell(): void {}
 }
 
 const silentSound: SoundControls = {
@@ -56,16 +66,32 @@ const silentSound: SoundControls = {
   voice: () => {},
 };
 
+/** Start a match on the fake server with a scripted enemy; wires sendAction. */
+async function startMatch(
+  mode: "classic" | "admiral",
+  ai: ScriptedAi,
+): Promise<{ game: RemoteGame; server: ReturnType<typeof createFakeServer> }> {
+  const server = createFakeServer({ enemyFleet: testFleet(), ai });
+  client.sendAction.mockImplementation(server.sendAction);
+  const game = await server.startGame({
+    mode,
+    difficulty: "easy",
+    fleet: testFleet(),
+  });
+  return { game, server };
+}
+
 function fireButton(cell: Coordinate): HTMLElement {
   return screen.getByRole("button", {
     name: `Fire at ${String.fromCharCode(65 + cell.x)}${cell.y + 1}`,
   });
 }
 
-function clickAndSettle(cell: Coordinate, settleMs: number): void {
+/** Click a square, let the (async) server reply land, then run the timers. */
+async function clickAndSettle(cell: Coordinate, settleMs: number) {
   fireEvent.click(fireButton(cell));
-  act(() => {
-    vi.advanceTimersByTime(settleMs);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(settleMs);
   });
 }
 
@@ -75,35 +101,30 @@ describe("full classic games", () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+    client.sendAction.mockReset();
   });
 
-  it("plays a full game the human wins, with strict turn alternation", { timeout: 30_000 }, () => {
-    const fleet = testFleet();
+  it("plays a full game the human wins, with strict turn alternation", { timeout: 30_000 }, async () => {
     const ai = new ScriptedAi(waterCells());
-    const session: Session = {
-      fleet,
-      playerBoard: new Board(fleet),
-      enemyBoard: new Board(testFleet()),
-      ai,
-    };
+    const { game } = await startMatch("classic", ai);
     const onPlayAgain = vi.fn();
     render(
       <BattleScreen
-        session={session}
+        session={game}
         difficulty="easy"
         sound={silentSound}
         onPlayAgain={onPlayAgain}
       />,
     );
 
-    const targets = fleetCells(fleet);
-    targets.forEach((cell, i) => {
-      clickAndSettle(cell, 2000);
+    const targets = fleetCells(testFleet());
+    for (const [i, cell] of targets.entries()) {
+      await clickAndSettle(cell, 2000);
       const expectedEnemyShots = Math.min(i + 1, targets.length - 1);
       expect(
         screen.getByText(`enemy shots: ${expectedEnemyShots}`),
       ).toBeInTheDocument();
-    });
+    }
 
     expect(screen.getByText("Victory")).toBeInTheDocument();
     // Exactly one shot per side per round — no extra turns for anyone.
@@ -117,18 +138,12 @@ describe("full classic games", () => {
     expect(onPlayAgain).toHaveBeenCalledTimes(1);
   });
 
-  it("plays a full game the computer wins", { timeout: 30_000 }, () => {
-    const fleet = testFleet();
-    const ai = new ScriptedAi(fleetCells(fleet));
-    const session: Session = {
-      fleet,
-      playerBoard: new Board(fleet),
-      enemyBoard: new Board(testFleet()),
-      ai,
-    };
+  it("plays a full game the computer wins", { timeout: 30_000 }, async () => {
+    const ai = new ScriptedAi(fleetCells(testFleet()));
+    const { game, server } = await startMatch("classic", ai);
     render(
       <BattleScreen
-        session={session}
+        session={game}
         difficulty="easy"
         sound={silentSound}
         onPlayAgain={() => {}}
@@ -137,7 +152,7 @@ describe("full classic games", () => {
 
     // The player fires only at water while the AI dismantles the fleet.
     for (const cell of waterCells().slice(0, 17)) {
-      clickAndSettle(cell, 3000);
+      await clickAndSettle(cell, 3000);
       if (screen.queryByText("Defeat")) {
         break;
       }
@@ -147,21 +162,16 @@ describe("full classic games", () => {
     const keys = ai.targets.map(coordKey);
     expect(new Set(keys).size).toBe(keys.length);
     expect(ai.targets).toHaveLength(17);
-    expect(session.playerBoard.allSunk()).toBe(true);
-    expect(session.enemyBoard.allSunk()).toBe(false);
+    const live = server.liveOf(game);
+    expect(live.game.board(0).allSunk()).toBe(true);
+    expect(live.game.board(1).allSunk()).toBe(false);
   });
 
-  it("ignores clicks while the enemy turn is resolving", () => {
-    const fleet = testFleet();
-    const session: Session = {
-      fleet,
-      playerBoard: new Board(fleet),
-      enemyBoard: new Board(testFleet()),
-      ai: new ScriptedAi(waterCells()),
-    };
+  it("ignores clicks while the enemy turn is resolving", async () => {
+    const { game } = await startMatch("classic", new ScriptedAi(waterCells()));
     render(
       <BattleScreen
-        session={session}
+        session={game}
         difficulty="easy"
         sound={silentSound}
         onPlayAgain={() => {}}
@@ -173,30 +183,48 @@ describe("full classic games", () => {
     fireEvent.click(fireButton({ x: 8, y: 9 }));
     fireEvent.click(fireButton({ x: 7, y: 9 }));
     fireEvent.click(fireButton({ x: 9, y: 9 }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(client.sendAction).toHaveBeenCalledTimes(1);
     expect(screen.getByText(/your shots: 1/i)).toBeInTheDocument();
 
-    act(() => {
-      vi.advanceTimersByTime(2000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
     });
     expect(screen.getByText(/your shots: 1/i)).toBeInTheDocument();
     expect(screen.getByText(/enemy shots: 1/i)).toBeInTheDocument();
+    expect(client.sendAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("never hands the browser the enemy fleet", async () => {
+    const { game } = await startMatch("classic", new ScriptedAi(waterCells()));
+    render(
+      <BattleScreen
+        session={game}
+        difficulty="easy"
+        sound={silentSound}
+        onPlayAgain={() => {}}
+      />,
+    );
+    await clickAndSettle({ x: 9, y: 9 }, 2000);
+
+    // Everything the component ever received: the session and each reply.
+    const seen = JSON.stringify([
+      game,
+      ...(await Promise.all(client.sendAction.mock.results.map((r) => r.value))),
+    ]);
+    // Only the player's own fleet (echoed back in each `game`) and the two
+    // resolved shots carry coordinates; there is no enemy placement, board,
+    // AI, or seed anywhere in what the browser holds.
+    const messages = 1 + client.sendAction.mock.results.length;
+    expect(seen.match(/"bow"/g)).toHaveLength(5 * messages);
+    for (const forbidden of ["enemyBoard", "seed", "ships", '"ai"', "hits"]) {
+      expect(seen).not.toContain(forbidden);
+    }
+    expect(seen).toContain('"outcome":"miss"');
   });
 });
-
-/** A scripted Admiral AI that fires plain shots at a fixed list of squares. */
-class ScriptedAdmiralAi implements AdvancedAiPlayer {
-  readonly difficulty = "easy" as const;
-  readonly targets: Coordinate[] = [];
-  private index = 0;
-  constructor(private readonly script: Coordinate[]) {}
-  takeTurn(game: AdvancedGame, me: 0 | 1): TurnEvent[] {
-    const target = this.script[this.index++];
-    this.targets.push(target);
-    const result = game.fireShot(me, target);
-    return [{ kind: "shot", target, result }];
-  }
-  noteRevealedEnemyCell(): void {}
-}
 
 describe("fleet status readout", () => {
   it("crosses off exactly the ship that sank, not another of the same length", () => {
@@ -215,19 +243,15 @@ describe("full Admiral game", () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+    client.sendAction.mockReset();
   });
 
-  it("plays to a human victory through the enemy submarine's evasion", { timeout: 30_000 }, () => {
-    const fleet = testFleet();
-    const ai = new ScriptedAdmiralAi(waterCells());
-    const session: AdmiralSession = {
-      fleet,
-      game: new AdvancedGame([fleet, testFleet()], createRng(7)),
-      ai,
-    };
+  it("plays to a human victory through the enemy submarine's evasion", { timeout: 30_000 }, async () => {
+    const ai = new ScriptedAi(waterCells());
+    const { game, server } = await startMatch("admiral", ai);
     render(
       <AdmiralBattleScreen
-        session={session}
+        session={game}
         difficulty="easy"
         sound={silentSound}
         onPlayAgain={() => {}}
@@ -237,18 +261,19 @@ describe("full Admiral game", () => {
     // The first shot on the enemy submarine is evaded; the square stays
     // targetable, so sinking the whole fleet takes 18 shots.
     const subFirstCell = { x: 0, y: 6 };
-    const targets = [subFirstCell, ...fleetCells(fleet)];
+    const targets = [subFirstCell, ...fleetCells(testFleet())];
     for (const cell of targets) {
-      clickAndSettle(cell, 6000);
+      await clickAndSettle(cell, 6000);
     }
-    act(() => {
-      vi.advanceTimersByTime(4000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
     });
 
     expect(screen.getByText("Victory")).toBeInTheDocument();
-    expect(session.game.winner).toBe(0);
-    expect(session.game.shotsFired(0)).toBe(18);
-    expect(session.game.shotsFired(1)).toBe(17);
+    const live = server.liveOf(game);
+    expect(live.game.winner).toBe(0);
+    expect(live.game.shotsFired(0)).toBe(18);
+    expect(live.game.shotsFired(1)).toBe(17);
     const keys = ai.targets.map(coordKey);
     expect(new Set(keys).size).toBe(keys.length);
   });

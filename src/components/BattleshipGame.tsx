@@ -3,24 +3,24 @@
 import { useState } from "react";
 import { Difficulty } from "@/game/ai";
 import {
-  CampaignState,
   RankInfo,
   ShipClassId,
-  applyUpgrade,
-  loadCampaign,
+  StoredCampaign,
+  clearStoredCampaign,
+  loadStoredCampaign,
   rankForLevel,
-  recordLoss,
-  recordWin,
-  resetCampaign,
-  saveCampaign,
+  storeCampaign,
 } from "@/game/campaign";
 import {
-  AdmiralBattleScreen,
-  AdmiralSession,
-  createAdmiralSession,
-  createCampaignAdmiralSession,
-} from "./AdmiralBattleScreen";
-import { BattleScreen, Session, createSession } from "./BattleScreen";
+  GameApiError,
+  RemoteGame,
+  campaignRequest,
+  startGame,
+} from "@/game/client";
+import { CampaignUpdate } from "@/game/protocol";
+import { ShipPlacement } from "@/game/types";
+import { AdmiralBattleScreen } from "./AdmiralBattleScreen";
+import { BattleScreen, describeApiError } from "./BattleScreen";
 import { ArmoryScreen } from "./ArmoryScreen";
 import { BridgeHeader, CoordinateReadout } from "./BridgeHeader";
 import { GameMode, PlacementScreen } from "./PlacementScreen";
@@ -50,60 +50,110 @@ export default function BattleshipGame() {
 type CampaignPhase =
   | { screen: "armory" }
   | { screen: "placement" }
-  | { screen: "battle"; session: AdmiralSession };
+  | { screen: "battle"; session: RemoteGame };
 
 function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
   const sound = useSoundManager();
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [mode, setMode] = useState<GameMode>("classic");
-  const [session, setSession] = useState<Session | AdmiralSession | null>(
-    null,
-  );
-  const [campaign, setCampaign] = useState<CampaignState | null>(null);
+  const [session, setSession] = useState<RemoteGame | null>(null);
+  const [campaign, setCampaign] = useState<StoredCampaign | null>(null);
   const [campaignPhase, setCampaignPhase] = useState<CampaignPhase>({
     screen: "armory",
   });
   const [promotion, setPromotion] = useState<RankInfo | null>(null);
-  // Peek at the save so the mode card can offer "Continue Campaign".
-  const [savedCampaign, setSavedCampaign] = useState<CampaignState>(() =>
-    loadCampaign(),
+  // The sealed save on this device, so the mode card can offer "Continue".
+  // Only its token is authoritative; the server re-validates on every use.
+  const [savedCampaign, setSavedCampaign] = useState<StoredCampaign | null>(
+    () => loadStoredCampaign(),
   );
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const updateCampaign = (next: CampaignState) => {
-    saveCampaign(next);
+  /** Run one server call, surfacing failures as a notice. */
+  const call = async (work: () => Promise<void>) => {
+    if (pending) {
+      return;
+    }
+    setPending(true);
+    setError(null);
+    try {
+      await work();
+    } catch (err) {
+      setError(describeApiError(err));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const adoptCampaign = (next: StoredCampaign) => {
+    storeCampaign(next);
+    setSavedCampaign(next);
     setCampaign(next);
   };
 
-  const handleCampaignResult = (state: CampaignState) => (won: boolean) => {
-    if (won) {
-      const outcome = recordWin(state);
-      updateCampaign(outcome.state);
-      if (outcome.promotedTo) {
-        setPromotion(outcome.promotedTo);
+  const openCampaign = () =>
+    call(async () => {
+      const token = savedCampaign?.token ?? null;
+      setCampaignPhase({ screen: "armory" });
+      try {
+        adoptCampaign(await campaignRequest({ op: "load", token }));
+      } catch (err) {
+        // A save this server no longer accepts is discarded, never trusted.
+        if (err instanceof GameApiError && err.code === "invalid-token") {
+          clearStoredCampaign();
+          adoptCampaign(await campaignRequest({ op: "load", token: null }));
+          return;
+        }
+        throw err;
       }
-    } else {
-      updateCampaign(recordLoss(state));
+    });
+
+  const handleCampaignResult = (update: CampaignUpdate) => {
+    adoptCampaign({ token: update.token, state: update.state });
+    if (update.promotedTo) {
+      setPromotion(update.promotedTo);
     }
   };
+
+  const startBattle = (fleet: ShipPlacement[]) =>
+    call(async () => {
+      if (campaign) {
+        const game = await startGame({
+          mode: "campaign",
+          difficulty: "hard",
+          campaignToken: campaign.token,
+          fleet,
+        });
+        setCampaignPhase({ screen: "battle", session: game });
+        return;
+      }
+      setSession(await startGame({ mode, difficulty, fleet }));
+    });
 
   const campaignView =
     campaign === null ? null : campaignPhase.screen === "armory" ? (
       <ArmoryScreen
-        campaign={campaign}
+        campaign={campaign.state}
         sound={sound}
         onUpgrade={(shipClass: ShipClassId) =>
-          updateCampaign(applyUpgrade(campaign, shipClass))
+          void call(async () =>
+            adoptCampaign(
+              await campaignRequest({
+                op: "upgrade",
+                token: campaign.token,
+                ship: shipClass,
+              }),
+            ),
+          )
         }
         onStartLevel={() => setCampaignPhase({ screen: "placement" })}
-        onExit={() => {
-          setSavedCampaign(campaign);
-          setCampaign(null);
-        }}
-        onReset={() => {
-          const fresh = resetCampaign();
-          setSavedCampaign(fresh);
-          setCampaign(fresh);
-        }}
+        onExit={() => setCampaign(null)}
+        onReset={() =>
+          void call(async () =>
+            adoptCampaign(await campaignRequest({ op: "reset" })),
+          )
+        }
       />
     ) : campaignPhase.screen === "placement" ? (
       <PlacementScreen
@@ -113,15 +163,10 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
         mode="classic"
         onModeChange={() => {}}
         campaign={{
-          level: campaign.level,
-          rankTitle: rankForLevel(campaign.level).title,
+          level: campaign.state.level,
+          rankTitle: rankForLevel(campaign.state.level).title,
         }}
-        onStart={(fleet) =>
-          setCampaignPhase({
-            screen: "battle",
-            session: createCampaignAdmiralSession(fleet, campaign.level),
-          })
-        }
+        onStart={(fleet) => void startBattle(fleet)}
       />
     ) : (
       <AdmiralBattleScreen
@@ -131,9 +176,9 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
         onPlayAgain={() => setCampaignPhase({ screen: "armory" })}
         playAgainLabel="Return to Fleet Command"
         campaign={{
-          level: campaign.level,
-          upgrades: campaign.upgrades,
-          onResult: handleCampaignResult(campaign),
+          level: campaign.state.level,
+          upgrades: campaign.state.upgrades,
+          onResult: handleCampaignResult,
         }}
       />
     );
@@ -166,13 +211,25 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
       </BridgeHeader>
 
       <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6">
+        {(error || pending) && (
+          <p
+            role={error ? "alert" : "status"}
+            className={`radar-panel mx-auto w-full max-w-xl rounded-2xl border px-4 py-2 text-center text-xs font-semibold uppercase tracking-wider shadow-panel ${
+              error
+                ? "border-coral-500/50 bg-navy-900/90 text-coral-200"
+                : "border-navy-line/70 bg-navy-900/85 text-foam-400"
+            }`}
+          >
+            {error ?? "Contacting fleet command…"}
+          </p>
+        )}
         {campaignView ? (
           <>
             {campaignView}
             {promotion && campaign && (
               <PromotionModal
                 rank={promotion}
-                level={campaign.level}
+                level={campaign.state.level}
                 sound={sound}
                 onContinue={() => {
                   setPromotion(null);
@@ -182,7 +239,7 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
             )}
           </>
         ) : session ? (
-          "game" in session ? (
+          session.mode === "admiral" ? (
             <AdmiralBattleScreen
               session={session}
               difficulty={difficulty}
@@ -204,22 +261,14 @@ function GameRound({ onPlayAgain }: { onPlayAgain: () => void }) {
             onDifficultyChange={setDifficulty}
             mode={mode}
             onModeChange={setMode}
-            onStart={(fleet) =>
-              setSession(
-                mode === "admiral"
-                  ? createAdmiralSession(fleet, difficulty)
-                  : createSession(fleet, difficulty),
-              )
-            }
+            onStart={(fleet) => void startBattle(fleet)}
             battleCommander={{
-              level: savedCampaign.level,
+              level: savedCampaign?.state.level ?? 1,
               hasSave:
-                savedCampaign.level > 1 ||
-                Object.keys(savedCampaign.records).length > 0,
-              onLaunch: () => {
-                setCampaign(loadCampaign());
-                setCampaignPhase({ screen: "armory" });
-              },
+                savedCampaign !== null &&
+                (savedCampaign.state.level > 1 ||
+                  Object.keys(savedCampaign.state.records).length > 0),
+              onLaunch: () => void openCampaign(),
             }}
           />
         )}

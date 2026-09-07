@@ -7,6 +7,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // Next.js provides this marker module; tests stub it out.
+      "server-only": fileURLToPath(
+        new URL("./src/test/server-only.ts", import.meta.url),
+      ),
     },
   },
   test: {

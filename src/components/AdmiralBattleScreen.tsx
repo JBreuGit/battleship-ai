@@ -9,34 +9,33 @@ import {
 } from "react";
 import {
   AbilityKind,
-  AdvancedGame,
-  ShotResult,
   barrageCells,
   scanArea,
   sonarArea,
 } from "@/game/advanced";
-import { AdvancedAiPlayer, TurnEvent, createAdvancedAi } from "@/game/advancedAi";
 import { Difficulty } from "@/game/ai";
-import { coordKey } from "@/game/board";
+import { coordKey, shipCells } from "@/game/board";
 import {
   ABILITY_UNLOCK_LEVELS,
   STEALTH_UNLOCK_LEVEL,
   ShipClassId,
   WeaponTier,
-  campaignLoadout,
   weaponTierInfo,
 } from "@/game/campaign";
-import { createCampaignAdmiralAi } from "@/game/campaignAi";
-import { randomFleet } from "@/game/placement";
-import { createRng } from "@/game/rng";
+import { RemoteGame, sendAction } from "@/game/client";
 import {
-  BOARD_SIZE,
-  Coordinate,
-  FLEET_LENGTHS,
-  ShipPlacement,
-} from "@/game/types";
+  ActResponse,
+  CampaignUpdate,
+  PlayerAction,
+  PublicState,
+  WireBarrageReport,
+  WireEvent,
+  WireShotResult,
+} from "@/game/protocol";
+import { BOARD_SIZE, Coordinate, FLEET_LENGTHS } from "@/game/types";
 import {
   CellMark,
+  ConnectionNotice,
   FleetStatus,
   PlayerCell,
   ShotOverlay,
@@ -44,6 +43,8 @@ import {
   Wreck,
   damagedCells,
   damagedSegments,
+  describeApiError,
+  isFatalApiError,
   makeGrid,
   placementFromCells,
 } from "./BattleScreen";
@@ -73,53 +74,22 @@ type EnemyCell =
   | "evaded";
 type TargetedAbility = "recon" | "sonar" | "barrage";
 
-export interface AdmiralSession {
-  fleet: ShipPlacement[];
-  game: AdvancedGame;
-  ai: AdvancedAiPlayer;
-}
+/**
+ * The browser's whole knowledge of an Admiral / Battle Commander match: the
+ * player's fleet, the server's opaque token, and the public state it last
+ * reported. Both fleets' hidden positions and the AI live server-side.
+ */
+export type AdmiralSession = RemoteGame;
 
 const PLAYER = 0 as const;
 const ENEMY = 1 as const;
-/** Fleet index of the submarine (lengths 5, 4, 3, 3, 2). */
-const SUBMARINE_ID = 3;
-
-/** Build an Admiral-mode session from the player's fleet. */
-export function createAdmiralSession(
-  fleet: ShipPlacement[],
-  difficulty: Difficulty,
-): AdmiralSession {
-  const rng = createRng(Math.floor(Math.random() * 2 ** 32));
-  return {
-    fleet,
-    game: new AdvancedGame([fleet, randomFleet(rng)], rng),
-    ai: createAdvancedAi(difficulty, rng),
-  };
-}
-
-/**
- * Build a Battle Commander engagement: Admiral rules where both sides
- * carry only the abilities the campaign level has unlocked, against the
- * level-scaled campaign AI.
- */
-export function createCampaignAdmiralSession(
-  fleet: ShipPlacement[],
-  level: number,
-): AdmiralSession {
-  const rng = createRng(Math.floor(Math.random() * 2 ** 32));
-  const loadout = campaignLoadout(level);
-  return {
-    fleet,
-    game: new AdvancedGame([fleet, randomFleet(rng)], rng, [loadout, loadout]),
-    ai: createCampaignAdmiralAi(level, rng),
-  };
-}
 
 /** Campaign context for a battle: level, fleet weapon tiers, and outcome sink. */
 export interface CampaignBattleConfig {
   level: number;
   upgrades: Record<ShipClassId, WeaponTier>;
-  onResult: (won: boolean) => void;
+  /** Receives the server-settled campaign save once the battle is decided. */
+  onResult: (update: CampaignUpdate) => void;
 }
 
 /** Beefier cannon-fire renditions per weapon tier (tier 1 = stock sound). */
@@ -147,7 +117,7 @@ function heavyShellCells(cell: Coordinate): Coordinate[] {
 interface ShotFx {
   board: Side;
   cell: Coordinate;
-  outcome: ShotResult["outcome"];
+  outcome: WireShotResult["outcome"];
   seq: number;
 }
 
@@ -202,6 +172,47 @@ const AI_TURN_DELAY = 1000;
 const AI_EVENT_STEP = 1100;
 const GAME_OVER_DELAY = 1600;
 
+/** Time still to wait so an effect lands `total` ms after `startedAt`. */
+function remaining(startedAt: number, total: number): number {
+  return Math.max(0, total - (Date.now() - startedAt));
+}
+
+function firstShot(
+  events: WireEvent[],
+): { target: Coordinate; result: WireShotResult } | null {
+  for (const event of events) {
+    if (event.kind === "shot") {
+      return event;
+    }
+  }
+  return null;
+}
+
+function firstBarrage(events: WireEvent[]): WireBarrageReport | null {
+  for (const event of events) {
+    if (event.kind === "barrage") {
+      return event.report;
+    }
+  }
+  return null;
+}
+
+/**
+ * The public state to show while the enemy's reply is still being played
+ * back: the player's side of the response, the enemy's side as it was.
+ */
+function interimState(prev: PublicState, response: ActResponse): PublicState {
+  if (response.enemy.length === 0) {
+    return response.state;
+  }
+  return {
+    ...response.state,
+    winner: null,
+    shotsFired: [response.state.shotsFired[0], prev.shotsFired[1]],
+    stealth: [prev.stealth[0], response.state.stealth[1]],
+  };
+}
+
 export interface AdmiralBattleScreenProps {
   session: AdmiralSession;
   difficulty: Difficulty;
@@ -220,13 +231,13 @@ export function AdmiralBattleScreen({
   campaign,
   playAgainLabel,
 }: AdmiralBattleScreenProps) {
-  const { game, ai } = session;
+  const [pub, setPub] = useState<PublicState>(session.state);
   const [enemyGrid, setEnemyGrid] = useState<EnemyCell[][]>(() =>
     makeGrid<EnemyCell>("fog"),
   );
   const [playerGrid, setPlayerGrid] = useState<PlayerCell[][]>(() => {
     const grid = makeGrid<PlayerCell>("water");
-    for (const cell of game.board(PLAYER).occupiedCells()) {
+    for (const cell of session.fleet.flatMap(shipCells)) {
       grid[cell.y][cell.x] = "ship";
     }
     return grid;
@@ -256,31 +267,31 @@ export function AdmiralBattleScreen({
       : "Admiral mode — each ship carries one special ability.",
   );
   const [arming, setArming] = useState<TargetedAbility | null>(null);
-  /** Ship classes whose once-per-battle weapon special has been fired. */
-  const [usedSpecials, setUsedSpecials] = useState<ShipClassId[]>([]);
   /** Heavy-shell special armed and waiting for a target cell. */
   const [heavyArmed, setHeavyArmed] = useState<ShipClassId | null>(null);
   /** True once the player has committed to rapid fire for this turn. */
   const [abilityLock, setAbilityLock] = useState(false);
   const [hoverCell, setHoverCell] = useState<Coordinate | null>(null);
-  // Bumped after engine mutations so ability counts and stealth re-render.
-  const [, setTick] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [fatal, setFatal] = useState(false);
 
   const seqRef = useRef(0);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const gameRef = useRef<RemoteGame>(session);
+  const mountedRef = useRef(true);
 
-  useEffect(
-    () => () => {
-      timersRef.current.forEach(clearTimeout);
-    },
-    [],
-  );
+  useEffect(() => {
+    mountedRef.current = true;
+    const timers = timersRef.current;
+    return () => {
+      mountedRef.current = false;
+      timers.forEach(clearTimeout);
+    };
+  }, []);
 
   const later = useCallback((ms: number, fn: () => void) => {
     timersRef.current.push(setTimeout(fn, ms));
   }, []);
-
-  const refresh = useCallback(() => setTick((t) => t + 1), []);
 
   const markEnemy = useCallback((cells: Coordinate[], state: EnemyCell) => {
     setEnemyGrid((prev) => {
@@ -307,9 +318,9 @@ export function AdmiralBattleScreen({
     [],
   );
 
-  /** Apply a resolved shot to the target side's grid, fx, and fleet status. */
+  /** Apply a server-resolved shot to the target side's grid, fx, and fleet status. */
   const applyShot = useCallback(
-    (board: Side, target: Coordinate, result: ShotResult) => {
+    (board: Side, target: Coordinate, result: WireShotResult) => {
       seqRef.current += 1;
       setFx({ board, cell: target, outcome: result.outcome, seq: seqRef.current });
 
@@ -321,7 +332,6 @@ export function AdmiralBattleScreen({
         } else {
           setNotice("Your submarine evaded the shot — silent running expended.");
         }
-        refresh();
         return;
       }
 
@@ -338,7 +348,6 @@ export function AdmiralBattleScreen({
           result.outcome === "hit" ? "hit" : "sunk",
         );
       }
-      const setGrid = board === "enemy" ? null : setPlayerGrid;
       if (board === "enemy") {
         markEnemy(
           result.outcome === "miss" || result.outcome === "hit"
@@ -350,8 +359,8 @@ export function AdmiralBattleScreen({
               ? "hit"
               : "sunk",
         );
-      } else if (setGrid) {
-        setGrid((prev) => {
+      } else {
+        setPlayerGrid((prev) => {
           const next = prev.map((row) => [...row]);
           if (result.outcome === "miss") {
             next[target.y][target.x] = "miss";
@@ -370,8 +379,7 @@ export function AdmiralBattleScreen({
         setShake({ board, kind: "hit", seq: seqRef.current });
       }
       if (result.outcome === "sunk" || result.outcome === "fleet-sunk") {
-        const sunkBoard = game.board(board === "enemy" ? ENEMY : PLAYER);
-        const shipId = (sunkBoard.shipIdAt(target) ?? 0) as ShipId;
+        const shipId = (result.shipId ?? 0) as ShipId;
         const setSunk = board === "enemy" ? setEnemySunk : setPlayerSunk;
         const setWrecks = board === "enemy" ? setEnemyWrecks : setPlayerWrecks;
         setSunk((prev) => {
@@ -397,27 +405,28 @@ export function AdmiralBattleScreen({
         });
         setShake({ board, kind: "sunk", seq: seqRef.current });
       }
-      refresh();
     },
-    [game, markEnemy, refresh, sound],
+    [markEnemy, sound],
   );
 
   const finishGame = useCallback(
-    (won: boolean) => {
+    (won: boolean, update: CampaignUpdate | undefined) => {
       later(GAME_OVER_DELAY, () => {
         setWinner(won ? "player" : "enemy");
         sound.play(won ? "victory" : "defeat");
-        campaign?.onResult(won);
+        if (update) {
+          campaign?.onResult(update);
+        }
       });
     },
     [campaign, later, sound],
   );
 
-  /** Replay the AI's turn events with staggered timing, then hand back. */
+  /** Replay the AI's server-resolved turn with staggered timing, then hand back. */
   const replayAiTurn = useCallback(
-    (events: TurnEvent[]) => {
+    (response: ActResponse) => {
       let t = 0;
-      for (const event of events) {
+      for (const event of response.enemy) {
         if (event.kind === "shot") {
           const { target, result } = event;
           later(t, () => sound.play("fire"));
@@ -445,7 +454,6 @@ export function AdmiralBattleScreen({
                 ? `Enemy recon aircraft overhead — ${n} of your ship cell${n > 1 ? "s" : ""} photographed!`
                 : "Enemy recon aircraft overhead — they photographed open water.",
             );
-            refresh();
           });
           t += AI_EVENT_STEP;
         } else if (event.kind === "sonar") {
@@ -468,7 +476,6 @@ export function AdmiralBattleScreen({
             } else {
               setNotice("Enemy sonar ping sweeps your waters.");
             }
-            refresh();
           });
           t += AI_EVENT_STEP;
         } else {
@@ -489,8 +496,9 @@ export function AdmiralBattleScreen({
         }
       }
       later(t, () => {
-        if (game.winner !== null) {
-          finishGame(game.winner === PLAYER);
+        setPub(response.state);
+        if (response.state.winner !== null) {
+          finishGame(response.state.winner === PLAYER, response.campaign);
           return;
         }
         setTurn("player");
@@ -499,175 +507,220 @@ export function AdmiralBattleScreen({
         sound.play("turn");
       });
     },
-    [applyShot, finishGame, game, later, markEnemy, refresh, sound],
+    [applyShot, finishGame, later, markEnemy, sound],
   );
 
-  const startAiTurn = useCallback(() => {
-    setTurn("enemy");
-    sound.play("turn");
-    later(AI_TURN_DELAY, () => {
-      const events = ai.takeTurn(game, ENEMY);
-      replayAiTurn(events);
-    });
-  }, [ai, game, later, replayAiTurn, sound]);
+  const startAiTurn = useCallback(
+    (response: ActResponse) => {
+      setTurn("enemy");
+      sound.play("turn");
+      later(AI_TURN_DELAY, () => replayAiTurn(response));
+    },
+    [later, replayAiTurn, sound],
+  );
 
   /** After a player action resolves: continue rapid fire, end, or hand off. */
   const afterPlayerAction = useCallback(
-    (extraDelay: number) => {
+    (extraDelay: number, response: ActResponse) => {
       later(extraDelay, () => {
-        if (game.winner !== null) {
-          finishGame(game.winner === PLAYER);
+        if (response.enemy.length > 0) {
+          startAiTurn(response);
           return;
         }
-        if (game.currentTurn === PLAYER) {
-          setNotice(`Rapid fire — ${game.shotsRemaining} shot(s) remaining.`);
-          setBusy(false);
+        if (response.state.winner !== null) {
+          finishGame(response.state.winner === PLAYER, response.campaign);
           return;
         }
-        startAiTurn();
+        setNotice(`Rapid fire — ${response.state.shotsRemaining} shot(s) remaining.`);
+        setBusy(false);
       });
     },
-    [finishGame, game, later, startAiTurn],
+    [finishGame, later, startAiTurn],
+  );
+
+  /**
+   * Send one action to the server. `onOk` receives the response once the
+   * token has advanced; failures surface as a notice and unlock the board.
+   */
+  const submit = useCallback(
+    (action: PlayerAction, onOk: (response: ActResponse) => void) => {
+      setBusy(true);
+      setError(null);
+      void sendAction(gameRef.current, action).then(
+        ({ game, response }) => {
+          if (!mountedRef.current) {
+            return;
+          }
+          gameRef.current = game;
+          setPub((prev) => interimState(prev, response));
+          onOk(response);
+        },
+        (err: unknown) => {
+          if (!mountedRef.current) {
+            return;
+          }
+          setError(describeApiError(err));
+          setFatal(isFatalApiError(err));
+          setBusy(false);
+        },
+      );
+    },
+    [],
   );
 
   const handleFire = useCallback(
     (cell: Coordinate) => {
-      const result = game.fireShot(PLAYER, cell);
-      setBusy(true);
+      const startedAt = Date.now();
       setNotice(null);
       sound.play("fire");
-      later(SHELL_FLIGHT, () => applyShot("enemy", cell, result));
-      afterPlayerAction(SHELL_FLIGHT + 500);
+      submit({ type: "fire", target: cell }, (response) => {
+        const wait = remaining(startedAt, SHELL_FLIGHT);
+        const shot = firstShot(response.you);
+        if (shot) {
+          later(wait, () => applyShot("enemy", shot.target, shot.result));
+        }
+        afterPlayerAction(wait + 500, response);
+      });
     },
-    [afterPlayerAction, applyShot, game, later, sound],
+    [afterPlayerAction, applyShot, later, sound, submit],
   );
 
   const handleAbilityTarget = useCallback(
     (kind: TargetedAbility, center: Coordinate) => {
       setArming(null);
-      setBusy(true);
       if (kind === "recon") {
-        const report = game.useRecon(PLAYER, center);
-        sound.play("recon");
-        seqRef.current += 1;
-        setScanFx({
-          board: "enemy",
-          cells: report.cells,
-          kind: "recon",
-          seq: seqRef.current,
+        submit({ type: "recon", center }, (response) => {
+          const event = response.you.find((e) => e.kind === "recon");
+          if (event?.kind !== "recon") {
+            return;
+          }
+          const { report } = event;
+          sound.play("recon");
+          seqRef.current += 1;
+          setScanFx({
+            board: "enemy",
+            cells: report.cells,
+            kind: "recon",
+            seq: seqRef.current,
+          });
+          later(900, () => {
+            markEnemyIntel(report.contacts, "revealed");
+            markEnemyIntel(report.cells, "cleared");
+            const n = report.contacts.length;
+            setNotice(
+              n > 0
+                ? `Recon photos: ${n} enemy ship cell${n > 1 ? "s" : ""} revealed — marked ◎ on the plot!`
+                : "Recon photos developed — the area is clear.",
+            );
+          });
+          afterPlayerAction(1400, response);
         });
-        later(900, () => {
-          markEnemyIntel(report.contacts, "revealed");
-          markEnemyIntel(report.cells, "cleared");
-          const n = report.contacts.length;
-          setNotice(
-            n > 0
-              ? `Recon photos: ${n} enemy ship cell${n > 1 ? "s" : ""} revealed — marked ◎ on the plot!`
-              : "Recon photos developed — the area is clear.",
-          );
-        });
-        afterPlayerAction(1400);
       } else if (kind === "sonar") {
-        const report = game.useSonar(PLAYER, center);
-        sound.play("sonar");
-        seqRef.current += 1;
-        setScanFx({
-          board: "enemy",
-          cells: report.cells,
-          kind: "sonar",
-          seq: seqRef.current,
+        submit({ type: "sonar", center }, (response) => {
+          const event = response.you.find((e) => e.kind === "sonar");
+          if (event?.kind !== "sonar") {
+            return;
+          }
+          const { report } = event;
+          sound.play("sonar");
+          seqRef.current += 1;
+          setScanFx({
+            board: "enemy",
+            cells: report.cells,
+            kind: "sonar",
+            seq: seqRef.current,
+          });
+          if (report.revealedOwnCell) {
+            const revealed = report.revealedOwnCell;
+            setExposedOwnCells((prev) => [...prev, coordKey(revealed)]);
+          }
+          later(900, () => {
+            markEnemyIntel(report.cells, report.contacts > 0 ? "suspect" : "cleared");
+            setNotice(
+              (report.contacts > 0
+                ? `Sonar: ${report.contacts} contact echo${report.contacts > 1 ? "es" : ""} somewhere in the 5×5 area!`
+                : "Sonar: the 5×5 area is clear.") +
+                (report.revealedOwnCell
+                  ? " Your ping echoed — one of your ships is exposed."
+                  : ""),
+            );
+          });
+          afterPlayerAction(1400, response);
         });
-        if (report.revealedOwnCell) {
-          const revealed = report.revealedOwnCell;
-          ai.noteRevealedEnemyCell(revealed);
-          setExposedOwnCells((prev) => [...prev, coordKey(revealed)]);
-        }
-        later(900, () => {
-          markEnemyIntel(report.cells, report.contacts > 0 ? "suspect" : "cleared");
-          setNotice(
-            (report.contacts > 0
-              ? `Sonar: ${report.contacts} contact echo${report.contacts > 1 ? "es" : ""} somewhere in the 5×5 area!`
-              : "Sonar: the 5×5 area is clear.") +
-              (report.revealedOwnCell
-                ? " Your ping echoed — one of your ships is exposed."
-                : ""),
-          );
-        });
-        afterPlayerAction(1400);
       } else {
-        const report = game.useBarrage(PLAYER, center);
+        const startedAt = Date.now();
         setNotice("Main guns — full barrage!");
         sound.play("fire");
-        report.shots.forEach(({ target, result }, i) => {
-          later(300 + i * BARRAGE_STEP, () => {
-            if (i > 0) {
-              sound.play("fire");
-            }
-            applyShot("enemy", target, result);
+        submit({ type: "barrage", center }, (response) => {
+          const report = firstBarrage(response.you);
+          if (!report) {
+            return;
+          }
+          const wait = remaining(startedAt, 300);
+          report.shots.forEach(({ target, result }, i) => {
+            later(wait + i * BARRAGE_STEP, () => {
+              if (i > 0) {
+                sound.play("fire");
+              }
+              applyShot("enemy", target, result);
+            });
           });
+          afterPlayerAction(wait + report.shots.length * BARRAGE_STEP + 500, response);
         });
-        afterPlayerAction(300 + report.shots.length * BARRAGE_STEP + 500);
       }
-      refresh();
     },
-    [afterPlayerAction, ai, applyShot, game, later, markEnemyIntel, refresh, sound],
+    [afterPlayerAction, applyShot, later, markEnemyIntel, sound, submit],
   );
 
   /** Heavy shell special: blanket the 2×2 area anchored at the click. */
   const handleHeavyShell = useCallback(
     (shipClass: ShipClassId, cell: Coordinate) => {
+      const startedAt = Date.now();
       setHeavyArmed(null);
-      setUsedSpecials((prev) => [...prev, shipClass]);
-      setBusy(true);
       setNotice("Heavy shell — blanket salvo!");
-      const report = game.fireSalvo(PLAYER, heavyShellCells(cell));
       sound.play("fire", FIRE_VARIANTS[3]);
-      report.shots.forEach(({ target, result }, i) => {
-        later(300 + i * BARRAGE_STEP, () => {
-          if (i > 0) {
-            sound.play("fire", FIRE_VARIANTS[3]);
-          }
-          applyShot("enemy", target, result);
+      submit({ type: "heavy", ship: shipClass, cell }, (response) => {
+        const report = firstBarrage(response.you);
+        if (!report) {
+          return;
+        }
+        const wait = remaining(startedAt, 300);
+        report.shots.forEach(({ target, result }, i) => {
+          later(wait + i * BARRAGE_STEP, () => {
+            if (i > 0) {
+              sound.play("fire", FIRE_VARIANTS[3]);
+            }
+            applyShot("enemy", target, result);
+          });
         });
+        afterPlayerAction(wait + report.shots.length * BARRAGE_STEP + 500, response);
       });
-      afterPlayerAction(300 + report.shots.length * BARRAGE_STEP + 500);
-      refresh();
     },
-    [afterPlayerAction, applyShot, game, later, refresh, sound],
+    [afterPlayerAction, applyShot, later, sound, submit],
   );
 
-  /** Guided shot special: a guaranteed hit on an untouched enemy ship cell. */
+  /** Guided shot special: the server picks an untouched enemy ship cell. */
   const handleGuidedShot = useCallback(
     (shipClass: ShipClassId) => {
-      const board = game.board(ENEMY);
-      const untouched = board
-        .occupiedCells()
-        .filter((c) => !board.hasBeenFiredAt(c));
-      if (untouched.length === 0) {
-        return;
-      }
-      // Avoid the hidden submarine while its silent running could evade.
-      const safe = game.stealthAvailable(ENEMY)
-        ? untouched.filter((c) => board.shipIdAt(c) !== SUBMARINE_ID)
-        : untouched;
-      const pool = safe.length > 0 ? safe : untouched;
-      const cell = pool[Math.floor(Math.random() * pool.length)];
-      setUsedSpecials((prev) => [...prev, shipClass]);
-      setBusy(true);
+      const startedAt = Date.now();
       setNotice("Guided shot — radar lock acquired!");
-      const result = game.fireShot(PLAYER, cell);
       sound.play("fire", FIRE_VARIANTS[4]);
-      later(SHELL_FLIGHT, () => applyShot("enemy", cell, result));
-      afterPlayerAction(SHELL_FLIGHT + 500);
-      refresh();
+      submit({ type: "guided", ship: shipClass }, (response) => {
+        const wait = remaining(startedAt, SHELL_FLIGHT);
+        const shot = firstShot(response.you);
+        if (shot) {
+          later(wait, () => applyShot("enemy", shot.target, shot.result));
+        }
+        afterPlayerAction(wait + 500, response);
+      });
     },
-    [afterPlayerAction, applyShot, game, later, refresh, sound],
+    [afterPlayerAction, applyShot, later, sound, submit],
   );
 
   /** Arm or fire a ship class's once-per-battle weapon special. */
   const handleSpecial = useCallback(
     (shipClass: ShipClassId, tier: WeaponTier) => {
-      if (busy || winner || turn !== "player" || abilityLock || arming) {
+      if (busy || winner || fatal || turn !== "player" || abilityLock || arming) {
         return;
       }
       if (heavyArmed !== null && tier !== 3) {
@@ -675,18 +728,24 @@ export function AdmiralBattleScreen({
       }
       if (tier === 2) {
         // Rapid-fire cannon: two shots this turn, no ability use spent.
-        game.boostShots(PLAYER, 2);
-        setUsedSpecials((prev) => [...prev, shipClass]);
-        setAbilityLock(true);
-        sound.play("fire", FIRE_VARIANTS[2]);
-        setNotice("Rapid-fire cannon — two shots this turn!");
-        refresh();
+        submit({ type: "boost", ship: shipClass }, () => {
+          setAbilityLock(true);
+          sound.play("fire", FIRE_VARIANTS[2]);
+          setNotice("Rapid-fire cannon — two shots this turn!");
+          setBusy(false);
+        });
         return;
       }
       if (tier === 3) {
         setHeavyArmed((prev) => (prev === shipClass ? null : shipClass));
         sound.play("click");
-        setNotice("Heavy shell armed — pick the corner of the 2×2 blanket.");
+        setNotice((prev) =>
+          heavyArmed === shipClass
+            ? prev === "Heavy shell armed — pick the corner of the 2×2 blanket."
+              ? null
+              : prev
+            : "Heavy shell armed — pick the corner of the 2×2 blanket.",
+        );
         return;
       }
       handleGuidedShot(shipClass);
@@ -695,11 +754,11 @@ export function AdmiralBattleScreen({
       abilityLock,
       arming,
       busy,
-      game,
+      fatal,
       handleGuidedShot,
       heavyArmed,
-      refresh,
       sound,
+      submit,
       turn,
       winner,
     ],
@@ -707,7 +766,7 @@ export function AdmiralBattleScreen({
 
   const handleCellClick = useCallback(
     (cell: Coordinate) => {
-      if (busy || winner || turn !== "player") {
+      if (busy || winner || fatal || turn !== "player") {
         return;
       }
       if (arming) {
@@ -718,7 +777,8 @@ export function AdmiralBattleScreen({
         handleHeavyShell(heavyArmed, cell);
         return;
       }
-      if (game.board(ENEMY).hasBeenFiredAt(cell)) {
+      const state = enemyGrid[cell.y][cell.x];
+      if (state === "miss" || state === "hit" || state === "sunk") {
         return;
       }
       handleFire(cell);
@@ -726,7 +786,8 @@ export function AdmiralBattleScreen({
     [
       arming,
       busy,
-      game,
+      enemyGrid,
+      fatal,
       handleAbilityTarget,
       handleFire,
       handleHeavyShell,
@@ -741,19 +802,21 @@ export function AdmiralBattleScreen({
       if (
         busy ||
         winner ||
+        fatal ||
         abilityLock ||
         heavyArmed !== null ||
         turn !== "player" ||
-        !game.abilityAvailable(PLAYER, kind)
+        !pub.abilityAvailable[kind]
       ) {
         return;
       }
       if (kind === "rapid-fire") {
         setArming(null);
-        game.useRapidFire(PLAYER);
-        setAbilityLock(true);
-        setNotice("Rapid fire armed — two shots this turn!");
-        refresh();
+        submit({ type: "rapid-fire" }, () => {
+          setAbilityLock(true);
+          setNotice("Rapid fire armed — two shots this turn!");
+          setBusy(false);
+        });
         return;
       }
       setArming((prev) => (prev === kind ? null : kind));
@@ -765,7 +828,7 @@ export function AdmiralBattleScreen({
             : "Sonar armed — pick the center of the 5×5 ping.",
       );
     },
-    [abilityLock, busy, game, heavyArmed, refresh, turn, winner],
+    [abilityLock, busy, fatal, heavyArmed, pub, submit, turn, winner],
   );
 
   const previewCells = new Set<string>(
@@ -783,10 +846,10 @@ export function AdmiralBattleScreen({
       : [],
   );
 
-  const playerShots = game.shotsFired(PLAYER);
-  const enemyShots = game.shotsFired(ENEMY);
+  const [playerShots, enemyShots] = pub.shotsFired;
+  const usedSpecials = pub.usedSpecials;
   const rapidFireActive =
-    turn === "player" && !winner && game.shotsRemaining > 1;
+    turn === "player" && !winner && pub.shotsRemaining > 1;
 
   return (
     <div className="flex w-full flex-col items-center gap-5">
@@ -799,7 +862,7 @@ export function AdmiralBattleScreen({
             ? "Engagement over"
             : turn === "player"
               ? rapidFireActive
-                ? `Rapid fire — ${game.shotsRemaining} shots this turn`
+                ? `Rapid fire — ${pub.shotsRemaining} shots this turn`
                 : "Your turn — fire, or use a ship's ability"
               : `${PLAYERS.devin.name} is maneuvering…`
         }
@@ -820,12 +883,17 @@ export function AdmiralBattleScreen({
         {notice ?? ""}
       </p>
 
+      {error && (
+        <ConnectionNotice message={error} fatal={fatal} onRestart={onPlayAgain} />
+      )}
+
       <AbilityBar
-        game={game}
+        state={pub}
         arming={arming}
         disabled={
           busy ||
           !!winner ||
+          fatal ||
           abilityLock ||
           heavyArmed !== null ||
           turn !== "player"
@@ -851,6 +919,7 @@ export function AdmiralBattleScreen({
               sunkShip ||
               busy ||
               !!winner ||
+              fatal ||
               abilityLock ||
               arming !== null ||
               (heavyArmed !== null && heavyArmed !== shipClass) ||
@@ -920,6 +989,7 @@ export function AdmiralBattleScreen({
                   const clickable =
                     !busy &&
                     !winner &&
+                    !fatal &&
                     turn === "player" &&
                     (arming !== null || heavyArmed !== null || !fired);
                   const inPreview = previewCells.has(coordKey({ x, y }));
@@ -1024,7 +1094,7 @@ export function AdmiralBattleScreen({
             player="devin"
           />
           <FleetStatus label={`${PLAYERS.dutch.name} fleet`} sunk={playerSunk} />
-          <StealthStatus game={game} campaignLevel={campaign?.level} />
+          <StealthStatus state={pub} campaignLevel={campaign?.level} />
         </div>
 
         <BoardShell
@@ -1157,13 +1227,13 @@ export function AdmiralBattleScreen({
 }
 
 function AbilityBar({
-  game,
+  state,
   arming,
   disabled,
   onUse,
   campaignLevel,
 }: {
-  game: AdvancedGame;
+  state: PublicState;
   arming: TargetedAbility | null;
   disabled: boolean;
   onUse: (kind: AbilityKind) => void;
@@ -1176,9 +1246,9 @@ function AbilityBar({
         const locked =
           campaignLevel !== undefined &&
           campaignLevel < ABILITY_UNLOCK_LEVELS[kind];
-        const uses = game.usesLeft(PLAYER, kind);
+        const uses = state.uses[kind];
         const available =
-          !locked && !disabled && game.abilityAvailable(PLAYER, kind);
+          !locked && !disabled && state.abilityAvailable[kind];
         const armed = arming === kind;
         return (
           <button
@@ -1216,10 +1286,10 @@ function AbilityBar({
 }
 
 function StealthStatus({
-  game,
+  state,
   campaignLevel,
 }: {
-  game: AdvancedGame;
+  state: PublicState;
   campaignLevel?: number;
 }) {
   const locked =
@@ -1235,11 +1305,11 @@ function StealthStatus({
         </p>
       ) : (
         <ul className="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wider">
-          <li className={game.stealthAvailable(PLAYER) ? "text-foam-300" : "text-foam-400/40"}>
-            Your sub: {game.stealthAvailable(PLAYER) ? "ready" : "expended"}
+          <li className={state.stealth[PLAYER] ? "text-foam-300" : "text-foam-400/40"}>
+            Your sub: {state.stealth[PLAYER] ? "ready" : "expended"}
           </li>
-          <li className={game.stealthAvailable(ENEMY) ? "text-foam-300" : "text-foam-400/40"}>
-            Enemy sub: {game.stealthAvailable(ENEMY) ? "ready" : "expended"}
+          <li className={state.stealth[ENEMY] ? "text-foam-300" : "text-foam-400/40"}>
+            Enemy sub: {state.stealth[ENEMY] ? "ready" : "expended"}
           </li>
         </ul>
       )}
