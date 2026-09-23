@@ -7,6 +7,7 @@ import {
   CampaignResponse,
   CampaignUpdate,
   StartResponse,
+  isActResponse,
 } from "@/game/protocol";
 import {
   openCampaign,
@@ -158,12 +159,19 @@ export async function handleAct(
       return fail("stale-token", "That game token has already been used");
     case "pending":
       return fail("pending-action", "That action is still being processed");
-    case "replay":
+    case "replay": {
+      let cached: unknown = null;
       try {
-        return { status: 200, body: JSON.parse(claim.response) as ActResponse };
+        cached = JSON.parse(claim.response);
       } catch {
-        return fail("server-error", "Could not resolve the action");
+        cached = null;
       }
+      if (isActResponse(cached)) {
+        return { status: 200, body: cached };
+      }
+      await guard.release(record.id, index);
+      return fail("server-error", "Could not resolve the action");
+    }
     case "fresh":
       break;
   }

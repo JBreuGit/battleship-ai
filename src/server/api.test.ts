@@ -189,17 +189,30 @@ describe("handleAct", () => {
     expect(third.body).toEqual((await first).body);
   });
 
-  it("does not crash on a corrupt replay cache entry", async () => {
+  it("recovers from a corrupt replay cache entry on the identical retry", async () => {
     const { token } = startClassic();
     const store = new MemoryGuardStore();
     const g = new ReplayGuard(store);
     const action = { type: "fire", target: { x: 1, y: 1 } };
-    await handleAct({ token, action }, g);
+    const first = await handleAct({ token, action }, g);
     const { id } = openToken(token) as { id: string };
-    await store.set(`bs:v1:${id}:0:r`, "{not json", 60);
-    const result = await handleAct({ token, action }, g);
-    expect(result.status).toBe(500);
-    expect((result.body as ApiError).error).toBe("server-error");
+    for (const junk of ["{not json", "{}", "[1]", '{"token":"x"}']) {
+      await store.set(`bs:v1:${id}:0:r`, junk, 60);
+      const result = await handleAct({ token, action }, g);
+      expect(result.status).toBe(500);
+      expect((result.body as ApiError).error).toBe("server-error");
+      const retry = await handleAct({ token, action }, g);
+      expect(retry.status).toBe(200);
+      const { token: t1, ...body1 } = first.body as ActResponse;
+      const { token: t2, ...body2 } = retry.body as ActResponse;
+      expect(body2).toEqual(body1);
+      expect(openToken(t2)).toEqual(openToken(t1));
+    }
+    const other = await handleAct(
+      { token, action: { type: "fire", target: { x: 2, y: 2 } } },
+      g,
+    );
+    expect((other.body as ApiError).error).toBe("stale-token");
   });
 
   it("rejects a forged campaign level via the token", async () => {

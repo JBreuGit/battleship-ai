@@ -7,7 +7,22 @@ import {
 } from "./client";
 import type { PublicState } from "./protocol";
 
-const state = { turn: 0, winner: null, actionIndex: 0 } as unknown as PublicState;
+const state: PublicState = {
+  turn: 0,
+  winner: null,
+  shotsRemaining: 1,
+  shotsFired: [0, 0],
+  uses: { recon: 0, barrage: 0, sonar: 0, "rapid-fire": 0 },
+  abilityAvailable: {
+    recon: false,
+    barrage: false,
+    sonar: false,
+    "rapid-fire": false,
+  },
+  stealth: [false, false],
+  usedSpecials: [],
+  actionIndex: 0,
+};
 const game: RemoteGame = { mode: "classic", fleet: [], token: "t0", state };
 const action = { type: "fire", target: { x: 1, y: 2 } } as const;
 const ok = { token: "t1", you: [], enemy: [], state: { ...state, actionIndex: 1 } };
@@ -71,6 +86,18 @@ describe("sendAction", () => {
     expect((error as GameApiError).code).toBe("server-error");
     expect(isUncertainApiError(error)).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("rejects a 200 whose payload does not match the endpoint contract", async () => {
+    for (const junk of [{}, [], { token: "t1" }, { ...ok, state: {} }, { ...ok, you: "x" }]) {
+      fetchMock.mockReset();
+      fetchMock.mockResolvedValue(reply(200, junk));
+      const settled = sendAction(game, action).catch((error: unknown) => error);
+      await vi.runAllTimersAsync();
+      const error = await settled;
+      expect((error as GameApiError).code).toBe("server-error");
+      expect(isUncertainApiError(error)).toBe(true);
+    }
   });
 
   it("classifies network failures as uncertain", async () => {
