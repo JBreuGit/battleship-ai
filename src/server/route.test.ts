@@ -42,13 +42,13 @@ describe("gameRoute", () => {
   it("caps chunked bodies even without a content-length header", async () => {
     const chunk = "x".repeat(32 * 1024);
     const response = await gameRoute(streamed([chunk, chunk, chunk, chunk, chunk]), echo);
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(413);
     expect(await response.json()).toMatchObject({ message: "Request too large" });
     const declared = await gameRoute(
       streamed(["{}"], { "content-length": String(1024 * 1024) }),
       echo,
     );
-    expect(declared.status).toBe(400);
+    expect(declared.status).toBe(413);
   });
 
   it("turns unexpected handler failures into an opaque 500", async () => {

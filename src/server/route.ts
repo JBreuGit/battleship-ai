@@ -45,7 +45,7 @@ export async function gameRoute(
 }
 
 const tooLarge: ApiResult = {
-  status: 400,
+  status: 413,
   body: { error: "bad-request", message: "Request too large" },
 };
 const badJson: ApiResult = {
