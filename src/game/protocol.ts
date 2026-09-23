@@ -1,14 +1,21 @@
 import type { Difficulty } from "./ai";
-import type {
-  AbilityKind,
-  BarrageReport,
-  PlayerId,
-  ReconReport,
-  ShotResult,
-  SonarReport,
+import {
+  INITIAL_USES,
+  type AbilityKind,
+  type BarrageReport,
+  type PlayerId,
+  type ReconReport,
+  type ShotResult,
+  type SonarReport,
 } from "./advanced";
-import type { CampaignState, RankInfo, ShipClassId } from "./campaign";
-import type { Coordinate, ShipPlacement } from "./types";
+import {
+  deserializeCampaign,
+  SHIP_CLASS_IDS,
+  type CampaignState,
+  type RankInfo,
+  type ShipClassId,
+} from "./campaign";
+import { BOARD_SIZE, type Coordinate, type ShipPlacement } from "./types";
 
 /**
  * Wire protocol between the browser and the game server.
@@ -134,33 +141,148 @@ export interface ApiError {
   message: string;
 }
 
+/*
+ * Runtime guards for untrusted replies. The browser only trusts a 2xx body
+ * (and the server only trusts a replay-cache entry) once it matches the
+ * declared wire type down to every event and coordinate, so a truncated or
+ * corrupted payload surfaces as a retryable error instead of a crash.
+ */
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isCount = (value: unknown): value is number =>
+  Number.isInteger(value) && (value as number) >= 0;
+
+const isPlayerId = (value: unknown): value is PlayerId =>
+  value === 0 || value === 1;
+
+const isShipClassId = (value: unknown): value is ShipClassId =>
+  SHIP_CLASS_IDS.some((id) => id === value);
+
+const ABILITY_KINDS = Object.keys(INITIAL_USES) as AbilityKind[];
+
+const everyAbility = (
+  value: unknown,
+  ok: (entry: unknown) => boolean,
+): value is Record<AbilityKind, unknown> =>
+  isRecord(value) && ABILITY_KINDS.every((kind) => ok(value[kind]));
+
+const isPair = <T>(
+  value: unknown,
+  ok: (entry: unknown) => entry is T,
+): value is [T, T] =>
+  Array.isArray(value) && value.length === 2 && value.every(ok);
+
+const isList = <T>(
+  value: unknown,
+  ok: (entry: unknown) => entry is T,
+): value is T[] => Array.isArray(value) && value.every(ok);
+
+export function isCoordinate(value: unknown): value is Coordinate {
+  return (
+    isRecord(value) &&
+    Number.isInteger(value.x) &&
+    Number.isInteger(value.y) &&
+    (value.x as number) >= 0 &&
+    (value.x as number) < BOARD_SIZE &&
+    (value.y as number) >= 0 &&
+    (value.y as number) < BOARD_SIZE
+  );
+}
+
+export function isWireShotResult(value: unknown): value is WireShotResult {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (value.outcome === "evaded") {
+    return value.sunkShip === undefined && value.shipId === undefined;
+  }
+  return (
+    (value.outcome === "hit" ||
+      value.outcome === "miss" ||
+      value.outcome === "sunk" ||
+      value.outcome === "fleet-sunk") &&
+    (value.sunkShip === undefined || isList(value.sunkShip, isCoordinate)) &&
+    (value.shipId === undefined || isShipClassId(value.shipId))
+  );
+}
+
+const isBarrageShot = (
+  value: unknown,
+): value is WireBarrageReport["shots"][number] =>
+  isRecord(value) && isCoordinate(value.target) && isWireShotResult(value.result);
+
+export function isWireEvent(value: unknown): value is WireEvent {
+  if (!isRecord(value)) {
+    return false;
+  }
+  switch (value.kind) {
+    case "shot":
+      return isCoordinate(value.target) && isWireShotResult(value.result);
+    case "rapid-fire":
+      return true;
+    case "recon":
+      return (
+        isCoordinate(value.center) &&
+        isRecord(value.report) &&
+        isList(value.report.cells, isCoordinate) &&
+        isList(value.report.contacts, isCoordinate)
+      );
+    case "sonar":
+      return (
+        isCoordinate(value.center) &&
+        isRecord(value.report) &&
+        isList(value.report.cells, isCoordinate) &&
+        isCount(value.report.contacts) &&
+        (value.report.revealedOwnCell === null ||
+          isCoordinate(value.report.revealedOwnCell))
+      );
+    case "barrage":
+      return (
+        isCoordinate(value.center) &&
+        isRecord(value.report) &&
+        isList(value.report.shots, isBarrageShot) &&
+        isList(value.report.skipped, isCoordinate)
+      );
+    default:
+      return false;
+  }
+}
 
 export function isPublicState(value: unknown): value is PublicState {
   return (
     isRecord(value) &&
-    (value.turn === 0 || value.turn === 1) &&
-    (value.winner === null || value.winner === 0 || value.winner === 1) &&
-    typeof value.shotsRemaining === "number" &&
-    Array.isArray(value.shotsFired) &&
-    value.shotsFired.length === 2 &&
-    isRecord(value.uses) &&
-    isRecord(value.abilityAvailable) &&
-    Array.isArray(value.stealth) &&
-    value.stealth.length === 2 &&
-    Array.isArray(value.usedSpecials) &&
-    Number.isInteger(value.actionIndex)
+    isPlayerId(value.turn) &&
+    (value.winner === null || isPlayerId(value.winner)) &&
+    isCount(value.shotsRemaining) &&
+    isPair(value.shotsFired, isCount) &&
+    everyAbility(value.uses, isCount) &&
+    everyAbility(
+      value.abilityAvailable,
+      (entry) => typeof entry === "boolean",
+    ) &&
+    isPair(value.stealth, (entry): entry is boolean => typeof entry === "boolean") &&
+    isList(value.usedSpecials, isShipClassId) &&
+    isCount(value.actionIndex)
   );
 }
+
+export function isCampaignState(value: unknown): value is CampaignState {
+  return isRecord(value) && deserializeCampaign(JSON.stringify(value)) !== null;
+}
+
+const isRankInfo = (value: unknown): value is RankInfo =>
+  isRecord(value) &&
+  typeof value.title === "string" &&
+  Number.isInteger(value.fromLevel);
 
 export function isCampaignResponse(value: unknown): value is CampaignResponse {
   return (
     isRecord(value) &&
     typeof value.token === "string" &&
     value.token.length > 0 &&
-    isRecord(value.state) &&
-    Number.isInteger(value.state.level)
+    isCampaignState(value.state)
   );
 }
 
@@ -168,7 +290,9 @@ function isCampaignUpdate(value: unknown): value is CampaignUpdate {
   return (
     isRecord(value) &&
     isCampaignResponse(value) &&
-    typeof value.won === "boolean"
+    typeof value.won === "boolean" &&
+    (value.promotedTo === null || isRankInfo(value.promotedTo)) &&
+    typeof value.upgradePointEarned === "boolean"
   );
 }
 
@@ -185,8 +309,8 @@ export function isActResponse(value: unknown): value is ActResponse {
   return (
     isRecord(value) &&
     isStartResponse(value) &&
-    Array.isArray(value.you) &&
-    Array.isArray(value.enemy) &&
+    isList(value.you, isWireEvent) &&
+    isList(value.enemy, isWireEvent) &&
     (value.campaign === undefined || isCampaignUpdate(value.campaign))
   );
 }
