@@ -20,6 +20,7 @@ import {
   ShipClassId,
   WeaponTier,
   campaignLoadout,
+  deserializeCampaign,
 } from "@/game/campaign";
 import { createCampaignAdmiralAi } from "@/game/campaignAi";
 import { randomFleet } from "@/game/placement";
@@ -32,7 +33,7 @@ import {
   WireEvent,
   WireShotResult,
 } from "@/game/protocol";
-import { Rng, createRng } from "@/game/rng";
+import { Rng } from "@/game/rng";
 import {
   BOARD_SIZE,
   Coordinate,
@@ -40,6 +41,7 @@ import {
   InvalidPlacementError,
   ShipPlacement,
 } from "@/game/types";
+import { createSecureRng, isSeed } from "./rng";
 
 /**
  * Server-side rules engine.
@@ -56,13 +58,22 @@ import {
 export const PLAYER: PlayerId = 0;
 export const ENEMY: PlayerId = 1;
 const SUBMARINE_ID = SHIP_CLASSES.indexOf("submarine");
-const MAX_ACTIONS = 400;
+export const MAX_ACTIONS = 400;
+/**
+ * Tokens older than this are refused. It must stay below the replay guard's
+ * TTL so a token can never outlive the claim that stops it being re-used.
+ */
+export const MAX_RECORD_AGE_MS = 20 * 60 * 60 * 1000;
+const ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 
 export interface GameRecord {
   v: 1;
   kind: "game";
   id: string;
-  seed: number;
+  /** 256-bit hex seed behind the enemy fleet and every AI decision. */
+  seed: string;
+  /** Issue time (ms since epoch) of the match. */
+  issued: number;
   mode: GameMode;
   difficulty: Difficulty;
   /** The verified campaign save this battle was started from. */
@@ -205,17 +216,22 @@ export function parseAction(value: unknown): PlayerAction {
 export function createRecord(
   request: StartRequest,
   id: string,
-  seed: number,
+  seed: string,
   campaign?: CampaignState,
+  issued: number = Date.now(),
 ): GameRecord {
   if (request.mode === "campaign" && !campaign) {
     throw new GameRequestError("bad-request", "Missing campaign save");
+  }
+  if (!isSeed(seed)) {
+    throw new Error("Invalid seed");
   }
   return {
     v: 1,
     kind: "game",
     id,
-    seed: seed >>> 0,
+    seed,
+    issued,
     mode: request.mode,
     difficulty: request.difficulty,
     ...(request.mode === "campaign" ? { campaign } : {}),
@@ -248,8 +264,73 @@ class ClassicAiAdapter implements AdvancedAiPlayer {
   noteRevealedEnemyCell(): void {}
 }
 
+/**
+ * Re-validate a record that came out of an opened token. Tokens are
+ * authenticated, so this guards against records this server version no
+ * longer understands (or never issued) rather than against tampering; a
+ * malformed record must never reach the engine.
+ */
+export function parseGameRecord(
+  value: unknown,
+  now: number = Date.now(),
+): GameRecord | null {
+  if (
+    !isRecord(value) ||
+    value.v !== 1 ||
+    value.kind !== "game" ||
+    typeof value.id !== "string" ||
+    !ID_PATTERN.test(value.id) ||
+    !isSeed(value.seed) ||
+    !Number.isInteger(value.issued) ||
+    (value.issued as number) > now + 60_000 ||
+    now - (value.issued as number) > MAX_RECORD_AGE_MS ||
+    !Array.isArray(value.actions) ||
+    value.actions.length > MAX_ACTIONS
+  ) {
+    return null;
+  }
+  let request: StartRequest;
+  let actions: PlayerAction[];
+  try {
+    request = parseStartRequest({
+      mode: value.mode,
+      difficulty: value.difficulty,
+      fleet: value.fleet,
+      ...(value.mode === "campaign" ? { campaignToken: "sealed" } : {}),
+    });
+    actions = value.actions.map(parseAction);
+  } catch (error) {
+    if (error instanceof GameRequestError) {
+      return null;
+    }
+    throw error;
+  }
+  let campaign: CampaignState | undefined;
+  if (request.mode === "campaign") {
+    const parsed = deserializeCampaign(JSON.stringify(value.campaign ?? null));
+    if (!parsed) {
+      return null;
+    }
+    campaign = parsed;
+  } else if (value.campaign !== undefined) {
+    return null;
+  }
+  return {
+    v: 1,
+    kind: "game",
+    id: value.id,
+    seed: value.seed,
+    issued: value.issued as number,
+    mode: request.mode,
+    difficulty: request.difficulty,
+    ...(campaign ? { campaign } : {}),
+    fleet: request.fleet,
+    actions,
+  };
+}
+
 function buildLive(record: GameRecord): LiveGame {
-  const rng: Rng = createRng(record.seed);
+  const rng: Rng = createSecureRng(record.seed);
   const enemyFleet = randomFleet(rng);
   if (record.mode === "campaign") {
     const level = record.campaign?.level ?? 1;

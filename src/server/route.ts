@@ -17,21 +17,69 @@ export async function gameRoute(
   }
   const length = Number(request.headers.get("content-length") ?? 0);
   if (length > MAX_BODY_BYTES) {
-    return respond({
-      status: 400,
-      body: { error: "bad-request", message: "Request too large" },
-    });
+    return respond(tooLarge);
+  }
+  let text: string;
+  try {
+    text = await readBounded(request, MAX_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof BodyTooLarge) {
+      return respond(tooLarge);
+    }
+    return respond(badJson);
   }
   let body: unknown;
   try {
-    body = await request.json();
+    body = JSON.parse(text);
+  } catch {
+    return respond(badJson);
+  }
+  try {
+    return respond(await handler(body));
   } catch {
     return respond({
-      status: 400,
-      body: { error: "bad-request", message: "Expected a JSON body" },
+      status: 500,
+      body: { error: "server-error", message: "Fleet command is unavailable" },
     });
   }
-  return respond(await handler(body));
+}
+
+const tooLarge: ApiResult = {
+  status: 400,
+  body: { error: "bad-request", message: "Request too large" },
+};
+const badJson: ApiResult = {
+  status: 400,
+  body: { error: "bad-request", message: "Expected a JSON body" },
+};
+
+class BodyTooLarge extends Error {}
+
+/**
+ * Read the body as UTF-8, aborting once it exceeds `limit` bytes. The
+ * content-length header is advisory (absent on chunked uploads), so the
+ * limit is enforced on the bytes actually received.
+ */
+async function readBounded(request: Request, limit: number): Promise<string> {
+  if (!request.body) {
+    return "";
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    received += value.byteLength;
+    if (received > limit) {
+      await reader.cancel();
+      throw new BodyTooLarge();
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
 function respond({ status, body }: ApiResult): Response {

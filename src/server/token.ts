@@ -20,6 +20,7 @@ const VERSION = 1;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const MAX_TOKEN_CHARS = 64 * 1024;
+const BASE64URL = /^[A-Za-z0-9_-]+$/;
 
 let cachedKey: Buffer | null = null;
 
@@ -61,13 +62,15 @@ export function openToken(token: unknown): unknown {
   if (token.length > MAX_TOKEN_CHARS) {
     throw new TokenError("Game token too large");
   }
-  let raw: Buffer;
-  try {
-    raw = Buffer.from(token, "base64url");
-  } catch {
+  if (!BASE64URL.test(token)) {
     throw new TokenError();
   }
-  if (raw.length < 1 + IV_BYTES + TAG_BYTES || raw[0] !== VERSION) {
+  const raw = Buffer.from(token, "base64url");
+  if (
+    raw.toString("base64url") !== token ||
+    raw.length < 1 + IV_BYTES + TAG_BYTES ||
+    raw[0] !== VERSION
+  ) {
     throw new TokenError();
   }
   const iv = raw.subarray(1, 1 + IV_BYTES);
@@ -86,9 +89,4 @@ export function openToken(token: unknown): unknown {
 /** A fresh unguessable match id. */
 export function newGameId(): string {
   return randomBytes(16).toString("base64url");
-}
-
-/** A fresh 32-bit seed from the OS CSPRNG. */
-export function newSeed(): number {
-  return randomBytes(4).readUInt32BE(0);
 }

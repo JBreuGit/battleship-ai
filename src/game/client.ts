@@ -36,11 +36,18 @@ export interface RemoteGame {
   state: PublicState;
 }
 
-const RETRIES = 2;
+const RETRIES = 3;
+const BACKOFF_MS = 250;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 async function post<T>(url: string, body: unknown): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= RETRIES; attempt++) {
+    if (attempt > 0) {
+      await sleep(BACKOFF_MS * 2 ** (attempt - 1));
+    }
     let response: Response;
     try {
       response = await fetch(url, {
@@ -60,10 +67,22 @@ async function post<T>(url: string, body: unknown): Promise<T> {
       payload = null;
     }
     if (response.ok) {
+      if (typeof payload !== "object" || payload === null) {
+        lastError = new GameApiError(
+          "server-error",
+          "The game server sent an unreadable reply",
+          response.status,
+        );
+        continue;
+      }
       return payload as T;
     }
     const apiError = payload as Partial<ApiError> | null;
-    if (response.status >= 500 || response.status === 429) {
+    if (
+      response.status >= 500 ||
+      response.status === 429 ||
+      apiError?.error === "pending-action"
+    ) {
       lastError = new GameApiError(
         apiError?.error ?? "server-error",
         apiError?.message ?? "The game server is unavailable",
@@ -81,6 +100,26 @@ async function post<T>(url: string, body: unknown): Promise<T> {
     throw lastError;
   }
   throw new GameApiError("network", "Could not reach the game server");
+}
+
+/**
+ * True when the server may already have applied the action even though the
+ * client got no usable answer (timeouts, 5xx, throttling, in-flight retry).
+ * The only safe recovery is to resend the *same* action: a fresh token from
+ * the server's replay cache, or a stale-token error, both tell the truth,
+ * whereas a different action would be rejected against the used token.
+ */
+export function isUncertainApiError(error: unknown): boolean {
+  if (!(error instanceof GameApiError)) {
+    return true;
+  }
+  return (
+    error.code === "network" ||
+    error.code === "server-error" ||
+    error.code === "rate-limited" ||
+    error.code === "pending-action" ||
+    error.status >= 500
+  );
 }
 
 export async function startGame(request: StartRequest): Promise<RemoteGame> {

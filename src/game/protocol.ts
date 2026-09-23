@@ -121,7 +121,10 @@ export type ApiErrorCode =
   | "bad-request"
   | "invalid-fleet"
   | "invalid-token"
+  /** A different action was already accepted for this token. */
   | "stale-token"
+  /** The same action is still being processed; retry shortly. */
+  | "pending-action"
   | "illegal-action"
   | "rate-limited"
   | "server-error";

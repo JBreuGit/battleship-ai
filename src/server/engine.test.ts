@@ -14,14 +14,18 @@ import {
   ENEMY,
   GameRecord,
   GameRequestError,
+  MAX_ACTIONS,
+  MAX_RECORD_AGE_MS,
   PLAYER,
   act,
   createRecord,
   parseAction,
+  parseGameRecord,
   parseStartRequest,
   publicState,
   replay,
 } from "./engine";
+import { seedOf } from "@/test/fakeGameServer";
 
 const fleet = randomFleet(createRng(7));
 
@@ -29,7 +33,7 @@ function start(overrides: Partial<StartRequest> = {}): GameRecord {
   return createRecord(
     { mode: "classic", difficulty: "easy", fleet, ...overrides },
     "game-1",
-    12345,
+    seedOf(12345),
   );
 }
 
@@ -45,7 +49,7 @@ function campaign(level: number, tier: WeaponTier = 1): GameRecord {
   return createRecord(
     { mode: "campaign", difficulty: "easy", fleet, campaignToken: "sealed" },
     "game-1",
-    12345,
+    seedOf(12345),
     { ...createCampaignState(), level, upgrades: tiers(tier) },
   );
 }
@@ -145,7 +149,7 @@ describe("parseStartRequest", () => {
     });
     expect(ok.campaignToken).toBe("sealed");
     expectIllegal(
-      () => createRecord(ok, "id", 1),
+      () => createRecord(ok, "id", seedOf(1)),
       "bad-request",
     );
   });
@@ -164,6 +168,61 @@ describe("parseAction", () => {
     expect(
       parseAction({ type: "fire", target: { x: 2, y: 3, hit: true }, forge: "win" }),
     ).toEqual({ type: "fire", target: { x: 2, y: 3 } });
+  });
+});
+
+describe("parseGameRecord", () => {
+  const id = "a".repeat(22);
+  const valid = () =>
+    JSON.parse(JSON.stringify(start({ mode: "admiral" }))) as Record<string, unknown>;
+  const withId = (record: GameRecord): GameRecord => ({ ...record, id });
+
+  it("round-trips records the server itself issued", () => {
+    const now = Date.now();
+    const classic = withId(start());
+    expect(parseGameRecord(JSON.parse(JSON.stringify(classic)), now)).toEqual(classic);
+    const played = withId(act(campaign(9, 3), { type: "fire", target: { x: 0, y: 0 } }).record);
+    expect(parseGameRecord(JSON.parse(JSON.stringify(played)), now)).toEqual(played);
+  });
+
+  it("rejects structurally invalid or forged records", () => {
+    const base = { ...valid(), id };
+    const now = Date.now();
+    expect(parseGameRecord(base, now)).not.toBeNull();
+    const broken: Record<string, unknown>[] = [
+      { ...base, v: 2 },
+      { ...base, kind: "campaign" },
+      { ...base, id: "short" },
+      { ...base, id: "a".repeat(65) },
+      { ...base, seed: 12345 },
+      { ...base, seed: "z".repeat(64) },
+      { ...base, issued: "now" },
+      { ...base, mode: "god" },
+      { ...base, difficulty: "trivial" },
+      { ...base, fleet: [] },
+      { ...base, actions: "none" },
+      { ...base, actions: [{ type: "nuke" }] },
+      { ...base, actions: [{ type: "fire", target: { x: 10, y: 0 } }] },
+      { ...base, actions: new Array(MAX_ACTIONS + 1).fill({ type: "fire", target: { x: 0, y: 0 } }) },
+      // A non-campaign record must not smuggle a campaign save in.
+      { ...base, campaign: createCampaignState() },
+      // A campaign record must carry a valid save.
+      { ...base, mode: "campaign" },
+      { ...base, mode: "campaign", campaign: { ...createCampaignState(), level: 99 } },
+    ];
+    for (const record of broken) {
+      expect(parseGameRecord(record, now)).toBeNull();
+    }
+    expect(parseGameRecord(null, now)).toBeNull();
+    expect(parseGameRecord("token", now)).toBeNull();
+  });
+
+  it("expires stale records and refuses ones issued in the future", () => {
+    const now = Date.now();
+    const base = { ...valid(), id, issued: now };
+    expect(parseGameRecord(base, now + MAX_RECORD_AGE_MS - 1)).not.toBeNull();
+    expect(parseGameRecord(base, now + MAX_RECORD_AGE_MS + 1)).toBeNull();
+    expect(parseGameRecord({ ...base, issued: now + 120_000 }, now)).toBeNull();
   });
 });
 

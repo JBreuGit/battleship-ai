@@ -3,7 +3,12 @@
 import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { Difficulty } from "@/game/ai";
 import { coordKey, shipCells } from "@/game/board";
-import { GameApiError, RemoteGame, sendAction } from "@/game/client";
+import {
+  GameApiError,
+  RemoteGame,
+  isUncertainApiError,
+  sendAction,
+} from "@/game/client";
 import { WireEvent, WireShotResult } from "@/game/protocol";
 import {
   BOARD_SIZE,
@@ -328,23 +333,26 @@ export function BattleScreen({
     [aiTurn, later, sound],
   );
 
-  const handleFire = useCallback(
-    (cell: Coordinate) => {
-      if (busy || winner || fatal || turn !== "player") {
-        return;
-      }
-      if (enemyGrid[cell.y][cell.x] !== "fog") {
-        return;
-      }
+  /** The shot whose reply was lost, if any; resent via the notice's Retry. */
+  const retryRef = useRef<Coordinate | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
 
+  /**
+   * Send the shot. If the server may have applied it but the reply was lost,
+   * the board stays locked and the same shot is offered for resending — a
+   * different shot would be refused against the already-used token.
+   */
+  const sendShot = useCallback(
+    (cell: Coordinate) => {
       setBusy(true);
       setError(null);
-      sound.play("fire");
+      setCanRetry(false);
       void sendAction(gameRef.current, { type: "fire", target: cell }).then(
         ({ game, response }) => {
           if (!mountedRef.current) {
             return;
           }
+          retryRef.current = null;
           gameRef.current = game;
           const shot = response.you.map(shotOf).find((s) => s !== null);
           if (shot) {
@@ -357,21 +365,33 @@ export function BattleScreen({
             return;
           }
           setError(describeApiError(err));
-          setFatal(isFatalApiError(err));
+          const fatalError = isFatalApiError(err);
+          setFatal(fatalError);
+          if (!fatalError && isUncertainApiError(err)) {
+            retryRef.current = cell;
+            setCanRetry(true);
+            return;
+          }
+          retryRef.current = null;
           setBusy(false);
         },
       );
     },
-    [
-      applyPlayerShot,
-      busy,
-      enemyGrid,
-      fatal,
-      finishPlayerTurn,
-      sound,
-      turn,
-      winner,
-    ],
+    [applyPlayerShot, finishPlayerTurn],
+  );
+
+  const handleFire = useCallback(
+    (cell: Coordinate) => {
+      if (busy || winner || fatal || turn !== "player") {
+        return;
+      }
+      if (enemyGrid[cell.y][cell.x] !== "fog") {
+        return;
+      }
+      sound.play("fire");
+      sendShot(cell);
+    },
+    [busy, enemyGrid, fatal, sendShot, sound, turn, winner],
   );
 
   return (
@@ -404,6 +424,15 @@ export function BattleScreen({
           message={error}
           fatal={fatal}
           onRestart={onPlayAgain}
+          onRetry={
+            canRetry
+              ? () => {
+                  if (retryRef.current) {
+                    sendShot(retryRef.current);
+                  }
+                }
+              : undefined
+          }
         />
       )}
 
@@ -621,15 +650,20 @@ export function BattleScreen({
   );
 }
 
-/** Server-call failure notice; fatal errors offer a restart instead of a retry. */
+/**
+ * Server-call failure notice. Fatal errors offer a restart; failures where
+ * the server may already have applied the action offer to resend it.
+ */
 export function ConnectionNotice({
   message,
   fatal,
   onRestart,
+  onRetry,
 }: {
   message: string;
   fatal: boolean;
   onRestart: () => void;
+  onRetry?: () => void;
 }) {
   return (
     <div
@@ -637,7 +671,7 @@ export function ConnectionNotice({
       className="radar-panel flex w-full max-w-xl flex-wrap items-center justify-between gap-3 rounded-2xl border border-coral-500/50 bg-navy-900/90 px-4 py-3 text-sm text-foam-100 shadow-panel"
     >
       <span>{message}</span>
-      {fatal && (
+      {fatal ? (
         <button
           type="button"
           onClick={onRestart}
@@ -645,6 +679,16 @@ export function ConnectionNotice({
         >
           New battle
         </button>
+      ) : (
+        onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-lg border border-foam-100/40 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-foam-100 hover:bg-foam-100/10"
+          >
+            Retry
+          </button>
+        )
       )}
     </div>
   );
