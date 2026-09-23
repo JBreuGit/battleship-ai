@@ -169,8 +169,13 @@ export class ReplayGuard {
     await this.store.set(responseKey(gameId, index), response, TTL_SECONDS);
   }
 
-  /** Give the slot back when processing failed after the claim. */
+  /**
+   * Give the slot back when processing failed after the claim, or when the
+   * cached response turned out unusable. The response goes first so a new
+   * claimant can never pair its fresh claim with the old payload.
+   */
   async release(gameId: string, index: number): Promise<void> {
+    await this.store.del(responseKey(gameId, index));
     await this.store.del(claimKey(gameId, index));
   }
 }

@@ -18,7 +18,6 @@ import {
   StartRequest,
 } from "@/game/protocol";
 import { randomFleet } from "@/game/placement";
-import { createRng } from "@/game/rng";
 import { ShipPlacement } from "@/game/types";
 import {
   GameRecord,
@@ -28,6 +27,12 @@ import {
   publicState,
   replay,
 } from "@/server/engine";
+import { createSecureRng } from "@/server/rng";
+
+/** A valid 256-bit match seed derived from a small test number. */
+export function seedOf(n: number): string {
+  return n.toString(16).padStart(64, "0");
+}
 
 /**
  * In-process stand-in for the game API used by component tests. It runs the
@@ -39,7 +44,7 @@ export interface FakeServerOptions {
   enemyFleet?: ShipPlacement[];
   /** Scripted AI to use instead of the difficulty-based one. */
   ai?: AdvancedAiPlayer;
-  seed?: number;
+  seed?: string;
 }
 
 interface Match {
@@ -55,9 +60,10 @@ export function createFakeServer(options: FakeServerOptions = {}) {
     if (!options.enemyFleet && !options.ai) {
       return replay(record);
     }
-    const rng = createRng(record.seed);
+    const rng = createSecureRng(record.seed);
     const seeded = replay(record);
-    const enemyFleet = options.enemyFleet ?? randomFleet(createRng(record.seed));
+    const enemyFleet =
+      options.enemyFleet ?? randomFleet(createSecureRng(record.seed));
     const loadout =
       record.mode === "campaign"
         ? campaignLoadout(record.campaign?.level ?? 1)
@@ -84,7 +90,12 @@ export function createFakeServer(options: FakeServerOptions = {}) {
       request.mode === "campaign"
         ? openCampaign(request.campaignToken)
         : undefined;
-    const record = createRecord(request, id, options.seed ?? 1, campaign);
+    const record = createRecord(
+      request,
+      id,
+      options.seed ?? seedOf(1),
+      campaign,
+    );
     const live = buildLive(record);
     matches.set(id, { record, live });
     return {

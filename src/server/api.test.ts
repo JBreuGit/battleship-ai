@@ -33,6 +33,17 @@ describe("token", () => {
     expect(() => openToken("not-base64!!")).toThrow();
   });
 
+  it("accepts only the canonical base64url encoding", () => {
+    const token = sealToken({ hello: "world" });
+    expect(() => openToken(token + "=")).toThrow();
+    expect(() => openToken(token + "A")).toThrow();
+    expect(() => openToken(token.replace(/-/g, "+").replace(/_/g, "/") + "+")).toThrow();
+    const raw = Buffer.from(token, "base64url");
+    raw[0] = 2;
+    expect(() => openToken(raw.toString("base64url"))).toThrow();
+    expect(() => openToken("A".repeat(70 * 1024))).toThrow();
+  });
+
   it("does not expose its contents", () => {
     const token = sealToken({ seed: 424242, fleet });
     expect(token).not.toContain("424242");
@@ -141,14 +152,79 @@ describe("handleAct", () => {
     expect(legal.status).toBe(200);
   });
 
+  it("rejects sealed records that fail structural validation", async () => {
+    const { token } = startClassic();
+    const record = openToken(token) as Record<string, unknown>;
+    const stale = sealToken({ ...record, issued: Date.now() - 48 * 60 * 60 * 1000 });
+    const legacy = sealToken({ ...record, seed: 12345 });
+    const bogus = sealToken({ ...record, actions: [{ type: "fire", target: { x: 10, y: 10 } }] });
+    for (const bad of [stale, legacy, bogus]) {
+      const result = await handleAct(
+        { token: bad, action: { type: "fire", target: { x: 0, y: 0 } } },
+        guard(),
+      );
+      expect(result.status).toBe(401);
+    }
+  });
+
+  it("reports an in-flight identical action as pending rather than stale", async () => {
+    const { token } = startClassic();
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => (finish = resolve));
+    class SlowStore extends MemoryGuardStore {
+      async set(key: string, value: string, ttl: number) {
+        await gate;
+        await super.set(key, value, ttl);
+      }
+    }
+    const g = new ReplayGuard(new SlowStore());
+    const action = { type: "fire", target: { x: 1, y: 1 } };
+    const first = handleAct({ token, action }, g);
+    const second = await handleAct({ token, action }, g);
+    expect(second.status).toBe(409);
+    expect((second.body as ApiError).error).toBe("pending-action");
+    finish();
+    expect((await first).status).toBe(200);
+    const third = await handleAct({ token, action }, g);
+    expect(third.body).toEqual((await first).body);
+  });
+
+  it("recovers from a corrupt replay cache entry on the identical retry", async () => {
+    const { token } = startClassic();
+    const store = new MemoryGuardStore();
+    const g = new ReplayGuard(store);
+    const action = { type: "fire", target: { x: 1, y: 1 } };
+    const first = await handleAct({ token, action }, g);
+    const { id } = openToken(token) as { id: string };
+    for (const junk of ["{not json", "{}", "[1]", '{"token":"x"}']) {
+      await store.set(`bs:v1:${id}:0:r`, junk, 60);
+      const result = await handleAct({ token, action }, g);
+      expect(result.status).toBe(500);
+      expect((result.body as ApiError).error).toBe("server-error");
+      const retry = await handleAct({ token, action }, g);
+      expect(retry.status).toBe(200);
+      const { token: t1, ...body1 } = first.body as ActResponse;
+      const { token: t2, ...body2 } = retry.body as ActResponse;
+      expect(body2).toEqual(body1);
+      expect(openToken(t2)).toEqual(openToken(t1));
+    }
+    const other = await handleAct(
+      { token, action: { type: "fire", target: { x: 2, y: 2 } } },
+      g,
+    );
+    expect((other.body as ApiError).error).toBe("stale-token");
+  });
+
   it("rejects a forged campaign level via the token", async () => {
     const { token } = startClassic();
     const record = openToken(token) as Record<string, unknown>;
     const forged = sealToken({ ...record, mode: "campaign", level: 20 });
     // Re-sealing with the real key is only possible server-side; even then the
-    // record must be self-consistent — a classic record lacks a campaign save.
+    // record must be self-consistent — a classic record lacks a campaign save,
+    // so the sealed payload is refused before any replay happens.
     const result = await handleAct({ token: forged, action: { type: "boost", ship: 4 } }, guard());
-    expect(result.status).toBe(422);
+    expect(result.status).toBe(401);
+    expect((result.body as ApiError).error).toBe("invalid-token");
   });
 });
 

@@ -21,7 +21,9 @@ export function clientKey(request: Request): string {
 
 export function rateLimited(key: string, now = Date.now()): boolean {
   const recent = (hits.get(key) ?? []).filter((t) => now - t < WINDOW_MS);
-  recent.push(now);
+  if (recent.length <= LIMIT) {
+    recent.push(now);
+  }
   if (!hits.has(key) && hits.size >= MAX_CLIENTS) {
     const oldest = hits.keys().next().value;
     if (oldest !== undefined) {

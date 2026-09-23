@@ -22,7 +22,7 @@ import {
   WeaponTier,
   weaponTierInfo,
 } from "@/game/campaign";
-import { RemoteGame, sendAction } from "@/game/client";
+import { RemoteGame, isUncertainApiError, sendAction } from "@/game/client";
 import {
   ActResponse,
   CampaignUpdate,
@@ -538,19 +538,30 @@ export function AdmiralBattleScreen({
     [finishGame, later, startAiTurn],
   );
 
+  /** The action whose reply was lost, if any; resent via the notice's Retry. */
+  const retryRef = useRef<{
+    action: PlayerAction;
+    onOk: (response: ActResponse) => void;
+  } | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
+
   /**
    * Send one action to the server. `onOk` receives the response once the
-   * token has advanced; failures surface as a notice and unlock the board.
+   * token has advanced. Rejections unlock the board; if the reply was lost
+   * and the server may already have applied the action, the board stays
+   * locked and the same action is offered for resending instead.
    */
   const submit = useCallback(
     (action: PlayerAction, onOk: (response: ActResponse) => void) => {
       setBusy(true);
       setError(null);
+      setCanRetry(false);
       void sendAction(gameRef.current, action).then(
         ({ game, response }) => {
           if (!mountedRef.current) {
             return;
           }
+          retryRef.current = null;
           gameRef.current = game;
           setPub((prev) => interimState(prev, response));
           onOk(response);
@@ -560,7 +571,14 @@ export function AdmiralBattleScreen({
             return;
           }
           setError(describeApiError(err));
-          setFatal(isFatalApiError(err));
+          const fatalError = isFatalApiError(err);
+          setFatal(fatalError);
+          if (!fatalError && isUncertainApiError(err)) {
+            retryRef.current = { action, onOk };
+            setCanRetry(true);
+            return;
+          }
+          retryRef.current = null;
           setBusy(false);
         },
       );
@@ -884,7 +902,21 @@ export function AdmiralBattleScreen({
       </p>
 
       {error && (
-        <ConnectionNotice message={error} fatal={fatal} onRestart={onPlayAgain} />
+        <ConnectionNotice
+          message={error}
+          fatal={fatal}
+          onRestart={onPlayAgain}
+          onRetry={
+            canRetry
+              ? () => {
+                  const pending = retryRef.current;
+                  if (pending) {
+                    submit(pending.action, pending.onOk);
+                  }
+                }
+              : undefined
+          }
+        />
       )}
 
       <AbilityBar

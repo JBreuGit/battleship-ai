@@ -7,6 +7,7 @@ import {
   CampaignResponse,
   CampaignUpdate,
   StartResponse,
+  isActResponse,
 } from "@/game/protocol";
 import {
   openCampaign,
@@ -20,12 +21,14 @@ import {
   act,
   createRecord,
   parseAction,
+  parseGameRecord,
   parseStartRequest,
   publicState,
   replay,
 } from "./engine";
 import { ReplayGuard, defaultGuardStore, fingerprint } from "./replayGuard";
-import { TokenError, newGameId, newSeed, openToken, sealToken } from "./token";
+import { newSeed } from "./rng";
+import { TokenError, newGameId, openToken, sealToken } from "./token";
 
 /**
  * Transport-agnostic handlers behind the `/api/game/*` route handlers.
@@ -43,6 +46,7 @@ const STATUS: Record<ApiErrorCode, number> = {
   "invalid-fleet": 400,
   "invalid-token": 401,
   "stale-token": 409,
+  "pending-action": 409,
   "illegal-action": 422,
   "rate-limited": 429,
   "server-error": 500,
@@ -115,17 +119,6 @@ function settleCampaign(
   };
 }
 
-function isGameRecord(value: unknown): value is GameRecord {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as GameRecord).v === 1 &&
-    (value as GameRecord).kind === "game" &&
-    typeof (value as GameRecord).id === "string" &&
-    Array.isArray((value as GameRecord).actions)
-  );
-}
-
 export async function handleAct(
   body: unknown,
   guard: ReplayGuard = new ReplayGuard(defaultGuardStore()),
@@ -137,9 +130,9 @@ export async function handleAct(
 
   let record: GameRecord;
   try {
-    const opened = openToken(token);
-    if (!isGameRecord(opened)) {
-      throw new TokenError();
+    const opened = parseGameRecord(openToken(token));
+    if (!opened) {
+      throw new TokenError("This game token is no longer valid");
     }
     record = opened;
   } catch (error) {
@@ -165,9 +158,20 @@ export async function handleAct(
     case "stale":
       return fail("stale-token", "That game token has already been used");
     case "pending":
-      return fail("stale-token", "That action is still being processed");
-    case "replay":
-      return { status: 200, body: JSON.parse(claim.response) as ActResponse };
+      return fail("pending-action", "That action is still being processed");
+    case "replay": {
+      let cached: unknown = null;
+      try {
+        cached = JSON.parse(claim.response);
+      } catch {
+        cached = null;
+      }
+      if (isActResponse(cached)) {
+        return { status: 200, body: cached };
+      }
+      await guard.release(record.id, index);
+      return fail("server-error", "Could not resolve the action");
+    }
     case "fresh":
       break;
   }

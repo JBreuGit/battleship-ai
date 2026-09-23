@@ -1,14 +1,17 @@
-import type {
-  ActResponse,
-  ApiError,
-  ApiErrorCode,
-  CampaignRequest,
-  CampaignResponse,
-  GameMode,
-  PlayerAction,
-  PublicState,
-  StartRequest,
-  StartResponse,
+import {
+  isActResponse,
+  isCampaignResponse,
+  isStartResponse,
+  type ActResponse,
+  type ApiError,
+  type ApiErrorCode,
+  type CampaignRequest,
+  type CampaignResponse,
+  type GameMode,
+  type PlayerAction,
+  type PublicState,
+  type StartRequest,
+  type StartResponse,
 } from "./protocol";
 import type { ShipPlacement } from "./types";
 
@@ -36,11 +39,22 @@ export interface RemoteGame {
   state: PublicState;
 }
 
-const RETRIES = 2;
+const RETRIES = 3;
+const BACKOFF_MS = 250;
 
-async function post<T>(url: string, body: unknown): Promise<T> {
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+async function post<T>(
+  url: string,
+  body: unknown,
+  isValid: (payload: unknown) => payload is T,
+): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= RETRIES; attempt++) {
+    if (attempt > 0) {
+      await sleep(BACKOFF_MS * 2 ** (attempt - 1));
+    }
     let response: Response;
     try {
       response = await fetch(url, {
@@ -60,10 +74,22 @@ async function post<T>(url: string, body: unknown): Promise<T> {
       payload = null;
     }
     if (response.ok) {
-      return payload as T;
+      if (!isValid(payload)) {
+        lastError = new GameApiError(
+          "server-error",
+          "The game server sent an unreadable reply",
+          response.status,
+        );
+        continue;
+      }
+      return payload;
     }
     const apiError = payload as Partial<ApiError> | null;
-    if (response.status >= 500 || response.status === 429) {
+    if (
+      response.status >= 500 ||
+      response.status === 429 ||
+      apiError?.error === "pending-action"
+    ) {
       lastError = new GameApiError(
         apiError?.error ?? "server-error",
         apiError?.message ?? "The game server is unavailable",
@@ -83,8 +109,32 @@ async function post<T>(url: string, body: unknown): Promise<T> {
   throw new GameApiError("network", "Could not reach the game server");
 }
 
+/**
+ * True when the server may already have applied the action even though the
+ * client got no usable answer (timeouts, 5xx, throttling, in-flight retry).
+ * The only safe recovery is to resend the *same* action: a fresh token from
+ * the server's replay cache, or a stale-token error, both tell the truth,
+ * whereas a different action would be rejected against the used token.
+ */
+export function isUncertainApiError(error: unknown): boolean {
+  if (!(error instanceof GameApiError)) {
+    return true;
+  }
+  return (
+    error.code === "network" ||
+    error.code === "server-error" ||
+    error.code === "rate-limited" ||
+    error.code === "pending-action" ||
+    error.status >= 500
+  );
+}
+
 export async function startGame(request: StartRequest): Promise<RemoteGame> {
-  const response = await post<StartResponse>("/api/game/start", request);
+  const response = await post<StartResponse>(
+    "/api/game/start",
+    request,
+    isStartResponse,
+  );
   return {
     mode: request.mode,
     fleet: request.fleet,
@@ -98,10 +148,11 @@ export async function sendAction(
   game: RemoteGame,
   action: PlayerAction,
 ): Promise<{ game: RemoteGame; response: ActResponse }> {
-  const response = await post<ActResponse>("/api/game/act", {
-    token: game.token,
-    action,
-  });
+  const response = await post<ActResponse>(
+    "/api/game/act",
+    { token: game.token, action },
+    isActResponse,
+  );
   return {
     game: { ...game, token: response.token, state: response.state },
     response,
@@ -111,5 +162,5 @@ export async function sendAction(
 export async function campaignRequest(
   request: CampaignRequest,
 ): Promise<CampaignResponse> {
-  return post<CampaignResponse>("/api/campaign", request);
+  return post<CampaignResponse>("/api/campaign", request, isCampaignResponse);
 }

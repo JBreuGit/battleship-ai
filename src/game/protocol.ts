@@ -121,7 +121,10 @@ export type ApiErrorCode =
   | "bad-request"
   | "invalid-fleet"
   | "invalid-token"
+  /** A different action was already accepted for this token. */
   | "stale-token"
+  /** The same action is still being processed; retry shortly. */
+  | "pending-action"
   | "illegal-action"
   | "rate-limited"
   | "server-error";
@@ -129,4 +132,61 @@ export type ApiErrorCode =
 export interface ApiError {
   error: ApiErrorCode;
   message: string;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+export function isPublicState(value: unknown): value is PublicState {
+  return (
+    isRecord(value) &&
+    (value.turn === 0 || value.turn === 1) &&
+    (value.winner === null || value.winner === 0 || value.winner === 1) &&
+    typeof value.shotsRemaining === "number" &&
+    Array.isArray(value.shotsFired) &&
+    value.shotsFired.length === 2 &&
+    isRecord(value.uses) &&
+    isRecord(value.abilityAvailable) &&
+    Array.isArray(value.stealth) &&
+    value.stealth.length === 2 &&
+    Array.isArray(value.usedSpecials) &&
+    Number.isInteger(value.actionIndex)
+  );
+}
+
+export function isCampaignResponse(value: unknown): value is CampaignResponse {
+  return (
+    isRecord(value) &&
+    typeof value.token === "string" &&
+    value.token.length > 0 &&
+    isRecord(value.state) &&
+    Number.isInteger(value.state.level)
+  );
+}
+
+function isCampaignUpdate(value: unknown): value is CampaignUpdate {
+  return (
+    isRecord(value) &&
+    isCampaignResponse(value) &&
+    typeof value.won === "boolean"
+  );
+}
+
+export function isStartResponse(value: unknown): value is StartResponse {
+  return (
+    isRecord(value) &&
+    typeof value.token === "string" &&
+    value.token.length > 0 &&
+    isPublicState(value.state)
+  );
+}
+
+export function isActResponse(value: unknown): value is ActResponse {
+  return (
+    isRecord(value) &&
+    isStartResponse(value) &&
+    Array.isArray(value.you) &&
+    Array.isArray(value.enemy) &&
+    (value.campaign === undefined || isCampaignUpdate(value.campaign))
+  );
 }
